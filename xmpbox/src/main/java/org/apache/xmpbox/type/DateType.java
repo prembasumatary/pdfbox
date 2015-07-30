@@ -59,10 +59,8 @@ public class DateType extends AbstractSimpleProperty
 
     /**
      * Set property value
-     * 
-     * @param value
-     *            the new Calendar element value
-     * @throws InappropriateTypeException
+     *
+     * @param value the new Calendar element value
      */
     private void setValueFromCalendar(Calendar value)
     {
@@ -74,6 +72,7 @@ public class DateType extends AbstractSimpleProperty
      * 
      * @return boolean
      */
+    @Override
     public Calendar getValue()
     {
         return dateValue;
@@ -113,11 +112,14 @@ public class DateType extends AbstractSimpleProperty
      * @param value
      *            The value to set
      */
+    @Override
     public void setValue(Object value)
     {
         if (!isGoodType(value))
         {
-            throw new IllegalArgumentException("Value given is not allowed for the Date type : " + value.getClass());
+            throw new IllegalArgumentException(
+                    "Value given is not allowed for the Date type: " 
+                            + value.getClass() + ", value: " + value);
         }
         else
         {
@@ -136,6 +138,7 @@ public class DateType extends AbstractSimpleProperty
 
     }
 
+    @Override
     public String getStringValue()
     {
         return DateConverter.toISO8601(dateValue);
@@ -151,7 +154,7 @@ public class DateType extends AbstractSimpleProperty
     {
         try
         {
-            setValueFromCalendar(DateConverter.toCalendar((String) value));
+            setValueFromCalendar(DateConverter.toCalendar(value));
         }
         catch (IOException e)
         {

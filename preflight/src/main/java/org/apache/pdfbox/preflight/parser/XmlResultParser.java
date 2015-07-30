@@ -43,23 +43,27 @@ public class XmlResultParser
 {
 
 
-    public Element validate (DataSource source) throws IOException {
-        try {
+    public Element validate(DataSource source) throws IOException
+    {
+        try
+        {
             Document rdocument = DocumentBuilderFactory.newInstance().newDocumentBuilder().newDocument();
             return validate(rdocument,source);
-        } catch (ParserConfigurationException e) {
-            IOException ioe = new IOException("Failed to init document builder");
-            ioe.initCause(e);
-            throw ioe;
+        }
+        catch (ParserConfigurationException e)
+        {
+            throw new IOException("Failed to init document builder", e);
         }
     }
 
 
-    public Element validate (Document rdocument, DataSource source) throws IOException {
+    public Element validate(Document rdocument, DataSource source) throws IOException
+    {
         String pdfType = null;
-        ValidationResult result = null;
+        ValidationResult result;
         long before = System.currentTimeMillis();
-        try {
+        try
+        {
             PreflightParser parser = new PreflightParser(source);
             try
             {
@@ -82,7 +86,8 @@ public class XmlResultParser
         }
 
         long after = System.currentTimeMillis();
-        if (result.isValid()) {
+        if (result.isValid())
+        {
             Element preflight = generateResponseSkeleton(rdocument, source.getName(), after-before);
             // valid ?
             Element valid = rdocument.createElement("isValid");
@@ -90,7 +95,9 @@ public class XmlResultParser
             valid.setTextContent("true");
             preflight.appendChild(valid);
             return preflight;
-        } else {
+        }
+        else
+        {
             Element preflight = generateResponseSkeleton(rdocument, source.getName(), after-before);
             // valid ?
             createResponseWithError(rdocument, pdfType, result, preflight);
@@ -99,7 +106,8 @@ public class XmlResultParser
 
     }
 
-    protected void createResponseWithError(Document rdocument, String pdfType, ValidationResult result, Element preflight) {
+    protected void createResponseWithError(Document rdocument, String pdfType, ValidationResult result, Element preflight)
+    {
         Element valid = rdocument.createElement("isValid");
         valid.setAttribute("type", pdfType);
         valid.setTextContent("false");
@@ -109,30 +117,42 @@ public class XmlResultParser
         Map<ValidationError, Integer> cleaned = cleanErrorList(result.getErrorsList());
         preflight.appendChild(errors);
         int totalCount = 0;
-        for (Map.Entry<ValidationError,Integer> entry : cleaned.entrySet())
+        for (Map.Entry<ValidationError, Integer> entry : cleaned.entrySet())
         {
             Element error = rdocument.createElement("error");
-            int count = entry.getValue().intValue();
-            error.setAttribute("count", String.format("%d",count));
+            int count = entry.getValue();
+            error.setAttribute("count", String.format("%d", count));
             totalCount += count;
             Element code = rdocument.createElement("code");
-            code.setTextContent(entry.getKey().getErrorCode());
+            ValidationError ve = entry.getKey();
+            code.setTextContent(ve.getErrorCode());
             error.appendChild(code);
             Element detail = rdocument.createElement("details");
-            detail.setTextContent(entry.getKey().getDetails());
+            detail.setTextContent(ve.getDetails());
             error.appendChild(detail);
+            if (ve.getPageNumber() != null)
+            {
+                Element page = rdocument.createElement("page");
+                page.setTextContent(ve.getPageNumber().toString());
+                error.appendChild(page);
+            }
             errors.appendChild(error);
         }
         errors.setAttribute("count", String.format("%d", totalCount));
     }
 
-    private Map<ValidationError,Integer> cleanErrorList (List<ValidationError> errors) {
+    private Map<ValidationError,Integer> cleanErrorList(List<ValidationError> errors)
+    {
         Map<ValidationError,Integer> cleaned = new HashMap<ValidationError, Integer>(errors.size());
-        for (ValidationError ve: errors) {
+        for (ValidationError ve: errors)
+        {
             Integer found = cleaned.get(ve);
-            if (found!=null) {
+            if (found!=null)
+            {
                 cleaned.put(ve,found+1);
-            } else {
+            }
+            else
+            {
                 cleaned.put(ve,1);
             }
 
@@ -140,7 +160,8 @@ public class XmlResultParser
          return cleaned;
     }
 
-    protected Element generateFailureResponse (Document rdocument, String name,long duration, String pdfType, Exception e) {
+    protected Element generateFailureResponse(Document rdocument, String name,long duration, String pdfType, Exception e)
+    {
         Element preflight = generateResponseSkeleton(rdocument, name, duration);
         // valid ?
         Element valid = rdocument.createElement("isValid");
@@ -163,7 +184,8 @@ public class XmlResultParser
         return preflight;
     }
 
-    protected Element generateResponseSkeleton (Document rdocument, String name, long duration) {
+    protected Element generateResponseSkeleton(Document rdocument, String name, long duration)
+    {
         Element preflight = rdocument.createElement("preflight");
         preflight.setAttribute("name", name);
         // duration

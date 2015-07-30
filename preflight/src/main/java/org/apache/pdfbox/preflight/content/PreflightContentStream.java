@@ -21,23 +21,17 @@
 
 package org.apache.pdfbox.preflight.content;
 
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_ENCODING_ERROR;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_UNKNOWN_FONT_REF;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_SYNTAX_CONTENT_STREAM_INVALID_ARGUMENT;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_SYNTAX_CONTENT_STREAM_UNSUPPORTED_OP;
-
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
-
+import org.apache.pdfbox.contentstream.operator.Operator;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSFloat;
 import org.apache.pdfbox.cos.COSInteger;
 import org.apache.pdfbox.cos.COSString;
 import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.pdmodel.graphics.pattern.PDTilingPattern;
@@ -48,7 +42,12 @@ import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
 import org.apache.pdfbox.preflight.exception.ValidationException;
 import org.apache.pdfbox.preflight.font.container.FontContainer;
 import org.apache.pdfbox.preflight.font.util.GlyphException;
-import org.apache.pdfbox.contentstream.operator.Operator;
+
+
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_ENCODING_ERROR;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_UNKNOWN_FONT_REF;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_SYNTAX_CONTENT_STREAM_INVALID_ARGUMENT;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_SYNTAX_CONTENT_STREAM_UNSUPPORTED_OP;
 
 public class PreflightContentStream extends PreflightStreamEngine
 {
@@ -62,12 +61,11 @@ public class PreflightContentStream extends PreflightStreamEngine
      *
      * @throws ValidationException
      */
-    public void validPageContentStream() throws ValidationException
+    public void validatePageContentStream() throws ValidationException
     {
         try
         {
-            PDStream pstream = this.processeedPage.getStream();
-            if (pstream != null)
+            if (this.processeedPage.hasContents())
             {
                 processPage(this.processeedPage);
             }
@@ -78,7 +76,7 @@ public class PreflightContentStream extends PreflightStreamEngine
         }
         catch (IOException e)
         {
-            throw new ValidationException("Unable to check the ContentStream : " + e.getMessage(), e);
+            throw new ValidationException("Unable to check the Page ContentStream : " + e.getMessage(), e);
         }
     }
 
@@ -88,7 +86,7 @@ public class PreflightContentStream extends PreflightStreamEngine
      * @param form the PDFormXObject to be validated.
      * @throws ValidationException
      */
-    public void validXObjContentStream(PDFormXObject form) throws ValidationException
+    public void validateXObjContentStream(PDFormXObject form) throws ValidationException
     {
         try
         {
@@ -108,7 +106,7 @@ public class PreflightContentStream extends PreflightStreamEngine
         }
         catch (IOException e)
         {
-            throw new ValidationException("Unable to check the ContentStream : " + e.getMessage(), e);
+            throw new ValidationException("Unable to check the XObject ContentStream : " + e.getMessage(), e);
         }
     }
 
@@ -118,7 +116,7 @@ public class PreflightContentStream extends PreflightStreamEngine
      * @param pattern the PDTilingPattern to be validated.
      * @throws ValidationException
      */
-    public void validPatternContentStream(PDTilingPattern pattern) throws ValidationException
+    public void validatePatternContentStream(PDTilingPattern pattern) throws ValidationException
     {
         try
         {
@@ -130,14 +128,14 @@ public class PreflightContentStream extends PreflightStreamEngine
         }
         catch (IOException e)
         {
-            throw new ValidationException("Unable to check the ContentStream : " + e.getMessage(), e);
+            throw new ValidationException("Unable to check the Pattern ContentStream : " + e.getMessage(), e);
         }
     }
 
     @Override
-    protected void processOperator(Operator operator, List<COSBase> arguments) throws IOException
+    protected void processOperator(Operator operator, List<COSBase> operands) throws IOException
     {
-        super.processOperator(operator, arguments);
+        super.processOperator(operator, operands);
 
         // todo: why are the checks below done here and not in OperatorProcessor classes?
 
@@ -146,15 +144,15 @@ public class PreflightContentStream extends PreflightStreamEngine
          */
         if ("BI".equals(operator.getName()))
         {
-            validImageFilter(operator);
-            validImageColorSpace(operator);
+            validateImageFilter(operator);
+            validateImageColorSpace(operator);
         }
 
-        checkShowTextOperators(operator, arguments);
+        checkShowTextOperators(operator, operands);
         checkColorOperators(operator.getName());
-        validRenderingIntent(operator, arguments);
-        checkSetColorSpaceOperators(operator, arguments);
-        validNumberOfGraphicStates(operator);
+        validateRenderingIntent(operator, operands);
+        checkSetColorSpaceOperators(operator, operands);
+        validateNumberOfGraphicStates(operator);
     }
 
     @Override
@@ -171,21 +169,19 @@ public class PreflightContentStream extends PreflightStreamEngine
      * 
      * @param operator
      * @param arguments
-     * @throws ContentStreamException
      * @throws IOException
      */
-    protected void checkShowTextOperators(Operator operator, List<?> arguments) throws ContentStreamException,
-            IOException
+    protected void checkShowTextOperators(Operator operator, List<?> arguments) throws IOException
     {
         String op = operator.getName();
         if ("Tj".equals(op) || "'".equals(op) || "\"".equals(op))
         {
-            validStringDefinition(operator, arguments);
+            validateStringDefinition(operator, arguments);
         }
 
         if ("TJ".equals(op))
         {
-            validStringArray(operator, arguments);
+            validateStringArray(operator, arguments);
         }
     }
 
@@ -197,11 +193,9 @@ public class PreflightContentStream extends PreflightStreamEngine
      * 
      * @param operator
      * @param arguments
-     * @throws ContentStreamException
      * @throws IOException
      */
-    private void validStringDefinition(Operator operator, List<?> arguments) throws ContentStreamException,
-            IOException
+    private void validateStringDefinition(Operator operator, List<?> arguments) throws IOException
     {
         /*
          * For a Text operator, the arguments list should contain only one COSString object
@@ -227,7 +221,7 @@ public class PreflightContentStream extends PreflightStreamEngine
 
             if (arg2 instanceof COSString)
             {
-                validText(((COSString) arg2).getBytes());
+                validateText(((COSString) arg2).getBytes());
             }
             else
             {
@@ -240,7 +234,7 @@ public class PreflightContentStream extends PreflightStreamEngine
             Object objStr = arguments.get(0);
             if (objStr instanceof COSString)
             {
-                validText(((COSString) objStr).getBytes());
+                validateText(((COSString) objStr).getBytes());
             }
             else if (!(objStr instanceof COSInteger))
             {
@@ -258,20 +252,19 @@ public class PreflightContentStream extends PreflightStreamEngine
      * 
      * @param operator
      * @param arguments
-     * @throws ContentStreamException
      * @throws IOException
      */
-    private void validStringArray(Operator operator, List<?> arguments) throws ContentStreamException, IOException
+    private void validateStringArray(Operator operator, List<?> arguments) throws IOException
     {
         for (Object object : arguments)
         {
             if (object instanceof COSArray)
             {
-                validStringArray(operator, ((COSArray) object).toList());
+                validateStringArray(operator, ((COSArray) object).toList());
             }
             else if (object instanceof COSString)
             {
-                validText(((COSString) object).getBytes());
+                validateText(((COSString) object).getBytes());
             }
             else if (!(object instanceof COSInteger || object instanceof COSFloat))
             {
@@ -293,7 +286,7 @@ public class PreflightContentStream extends PreflightStreamEngine
      * @param string
      * @throws IOException
      */
-    public void validText(byte[] string) throws IOException
+    public void validateText(byte[] string) throws IOException
     {
         // TextSize accessible through the TextState
         PDTextState textState = getGraphicsState().getTextState();
@@ -302,7 +295,7 @@ public class PreflightContentStream extends PreflightStreamEngine
         if (font == null)
         {
             // Unable to decode the Text without Font
-            registerError("Text operator can't be process without Font", ERROR_FONTS_UNKNOWN_FONT_REF);
+            registerError("Text operator can't be processed without a Font", ERROR_FONTS_UNKNOWN_FONT_REF);
             return;
         }
 
@@ -315,8 +308,14 @@ public class PreflightContentStream extends PreflightStreamEngine
         else if (fontContainer == null)
         {
             // Font Must be embedded if the RenderingMode isn't 3
-            registerError(font.getName() + " is unknown wasn't found by the FontHelperValdiator",
-                    ERROR_FONTS_UNKNOWN_FONT_REF);
+            if (font.getName() == null)
+            {
+                registerError("invalid font dictionary", ERROR_FONTS_UNKNOWN_FONT_REF);
+            }
+            else
+            {
+                registerError("font '" + font.getName() + "' is missing", ERROR_FONTS_UNKNOWN_FONT_REF);
+            }
             return;
         }
         else if (!fontContainer.isValid() && !fontContainer.errorsAleadyMerged())

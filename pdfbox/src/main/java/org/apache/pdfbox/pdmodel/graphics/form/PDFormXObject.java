@@ -17,16 +17,16 @@
 package org.apache.pdfbox.pdmodel.graphics.form;
 
 import java.awt.geom.AffineTransform;
-
+import java.io.IOException;
+import java.io.InputStream;
 import org.apache.pdfbox.contentstream.PDContentStream;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSFloat;
 import org.apache.pdfbox.cos.COSName;
-import org.apache.pdfbox.cos.COSNumber;
-import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDResources;
+import org.apache.pdfbox.pdmodel.ResourceCache;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.graphics.PDXObject;
@@ -53,10 +53,8 @@ final and all fields private.
  */
 public class PDFormXObject extends PDXObject implements PDContentStream
 {
-    // name of XObject in resources, to prevent recursion
-    private String name;
-
     private PDGroup group;
+    private final ResourceCache cache;
 
     /**
      * Creates a Form XObject for reading.
@@ -65,19 +63,19 @@ public class PDFormXObject extends PDXObject implements PDContentStream
     public PDFormXObject(PDStream stream)
     {
         super(stream, COSName.FORM);
+        cache = null;
     }
 
     /**
      * Creates a Form XObject for reading.
      * @param stream The XObject stream
-     * @param name The name of the form XObject, to prevent recursion.
      */
-    public PDFormXObject(PDStream stream, String name)
+    public PDFormXObject(PDStream stream, ResourceCache cache)
     {
         super(stream, COSName.FORM);
-        this.name = name;
+        this.cache = cache;
     }
-
+    
     /**
      * Creates a Form Image XObject for writing, in the given document.
      * @param document The current document
@@ -85,6 +83,7 @@ public class PDFormXObject extends PDXObject implements PDContentStream
     public PDFormXObject(PDDocument document)
     {
         super(document, COSName.FORM);
+        cache = null;
     }
 
     /**
@@ -110,7 +109,8 @@ public class PDFormXObject extends PDXObject implements PDContentStream
      *
      * @return the group attributes dictionary
      */
-    public PDGroup getGroup() {
+    public PDGroup getGroup()
+    {
         if( group == null ) 
         {
             COSDictionary dic = (COSDictionary) getCOSStream().getDictionaryObject(COSName.GROUP);
@@ -121,11 +121,16 @@ public class PDFormXObject extends PDXObject implements PDContentStream
         }
         return group;
     }
+    
+    public PDStream getContentStream()
+    {
+        return new PDStream(getCOSStream());
+    }
 
     @Override
-    public COSStream getContentStream()
+    public InputStream getContents() throws IOException
     {
-        return getCOSStream();
+        return getCOSStream().getUnfilteredStream();
     }
 
     /**
@@ -140,7 +145,7 @@ public class PDFormXObject extends PDXObject implements PDContentStream
         COSDictionary resources = (COSDictionary) getCOSStream().getDictionaryObject(COSName.RESOURCES);
         if (resources != null)
         {
-            return new PDResources(resources);
+            return new PDResources(resources, cache);
         }
         return null;
     }
@@ -191,29 +196,21 @@ public class PDFormXObject extends PDXObject implements PDContentStream
 
     /**
      * This will get the optional Matrix of an XObjectForm. It maps the form space to user space.
-     * @return the form matrix
+     * @return the form matrix if available, or the identity matrix.
      */
     @Override
     public Matrix getMatrix()
     {
-        Matrix retval = null;
         COSArray array = (COSArray) getCOSStream().getDictionaryObject(COSName.MATRIX);
         if (array != null)
         {
-            retval = new Matrix();
-            retval.setValue(0, 0, ((COSNumber) array.get(0)).floatValue());
-            retval.setValue(0, 1, ((COSNumber) array.get(1)).floatValue());
-            retval.setValue(1, 0, ((COSNumber) array.get(2)).floatValue());
-            retval.setValue(1, 1, ((COSNumber) array.get(3)).floatValue());
-            retval.setValue(2, 0, ((COSNumber) array.get(4)).floatValue());
-            retval.setValue(2, 1, ((COSNumber) array.get(5)).floatValue());
+            return new Matrix(array);
         }
         else
         {
             // default value is the identity matrix
-            retval = new Matrix();
+            return new Matrix();
         }
-        return retval;
     }
 
     /**

@@ -38,7 +38,8 @@ import static org.apache.pdfbox.preflight.PreflightConstants.FONT_DICTIONARY_VAL
 import static org.apache.pdfbox.preflight.PreflightConstants.FONT_DICTIONARY_VALUE_TYPE_CMAP;
 
 import java.io.IOException;
-
+import java.io.InputStream;
+import org.apache.commons.io.IOUtils;
 import org.apache.fontbox.cmap.CMap;
 import org.apache.fontbox.cmap.CMapParser;
 import org.apache.pdfbox.cos.COSArray;
@@ -87,7 +88,7 @@ public class Type0FontValidator extends FontValidator<Type0Container>
      */
     protected void checkMandatoryFields()
     {
-        COSDictionary fontDictionary = (COSDictionary) font.getCOSObject();
+        COSDictionary fontDictionary = font.getCOSObject();
         boolean areFieldsPResent = fontDictionary.containsKey(COSName.TYPE);
         areFieldsPResent &= fontDictionary.containsKey(COSName.SUBTYPE);
         areFieldsPResent &= fontDictionary.containsKey(COSName.BASE_FONT);
@@ -97,17 +98,20 @@ public class Type0FontValidator extends FontValidator<Type0Container>
         if (!areFieldsPResent)
         {
             this.fontContainer.push(new ValidationError(ERROR_FONTS_DICTIONARY_INVALID,
-                    "Some keys are missing from composite font dictionary"));
+                    font.getName() + ": Some keys are missing from composite font dictionary"));
         }
     }
 
     /**
-     * Extract the single CIDFont from the Descendant array. Create a FontValidator for this CODFont and launch its
-     * validation.
+     * Extract the single CIDFont from the descendant array. Create a FontValidator for this CIDFont
+     * and launch its validation.
+     *
+     * @throws org.apache.pdfbox.preflight.exception.ValidationException if there is an error
+     * validating the CIDFont.
      */
     protected void processDescendantFont() throws ValidationException
     {
-        COSDictionary fontDictionary = (COSDictionary) font.getCOSObject();
+        COSDictionary fontDictionary = font.getCOSObject();
         // a CIDFont is contained in the DescendantFonts array
         COSArray array = COSUtils.getAsArray(fontDictionary.getItem(COSName.DESCENDANT_FONTS), cosDocument);
         if (array == null || array.size() != 1)
@@ -117,7 +121,7 @@ public class Type0FontValidator extends FontValidator<Type0Container>
              * returns an error if the array has more than one element.
              */
             this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_INVALID,
-                    "CIDFont is missing from the DescendantFonts array or the size of array is greater than 1"));
+                    font.getName() + ": CIDFont is missing from the DescendantFonts array or the size of array is greater than 1"));
             return;
         }
 
@@ -125,7 +129,7 @@ public class Type0FontValidator extends FontValidator<Type0Container>
         if (cidFont == null)
         {
             this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_INVALID,
-                    "The DescendantFonts array should have one element with is a dictionary."));
+                    font.getName() + ": The DescendantFonts array should have one element with is a dictionary."));
             return;
         }
 
@@ -152,7 +156,7 @@ public class Type0FontValidator extends FontValidator<Type0Container>
         else
         {
             this.fontContainer.push(new ValidationError(ERROR_FONTS_DICTIONARY_INVALID,
-                    "Type and/or Subtype keys are missing"));
+                    font.getName() + ": Type and/or Subtype keys are missing"));
         }
         return cidFontValidator;
     }
@@ -168,13 +172,17 @@ public class Type0FontValidator extends FontValidator<Type0Container>
         }
         catch (IOException e)
         {
-            this.fontContainer.push(new ValidationError(ERROR_FONTS_CID_DAMAGED, "The CIDType0 font is damaged"));
+            this.fontContainer.push(new ValidationError(ERROR_FONTS_CID_DAMAGED, 
+                    font.getName() + ": The CIDType0 font is damaged", e));
             return null;
         }
     }
 
     /**
      * Create the validation object for CIDType2 Font
+     *
+     * @param fDict a CIDType2 font dictionary.
+     * @return a CIDType2 tont font validator.
      */
     protected FontValidator<? extends FontContainer> createCIDType2FontValidator(COSDictionary fDict)
     {
@@ -184,7 +192,8 @@ public class Type0FontValidator extends FontValidator<Type0Container>
         }
         catch (IOException e)
         {
-            this.fontContainer.push(new ValidationError(ERROR_FONTS_CID_DAMAGED, "The CIDType2 font is damaged"));
+            this.fontContainer.push(new ValidationError(ERROR_FONTS_CID_DAMAGED, 
+                    font.getName() + ": The CIDType2 font is damaged", e));
             return null;
         }
     }
@@ -195,9 +204,10 @@ public class Type0FontValidator extends FontValidator<Type0Container>
      * The CMap entry must be a dictionary in a PDF/A. This entry can be a String only if the String value is Identity-H
      * or Identity-V
      */
+    @Override
     protected void checkEncoding()
     {
-        COSBase encoding = ((COSDictionary) font.getCOSObject()).getItem(COSName.ENCODING);
+        COSBase encoding = (font.getCOSObject()).getItem(COSName.ENCODING);
         checkCMapEncoding(encoding);
     }
 
@@ -211,7 +221,7 @@ public class Type0FontValidator extends FontValidator<Type0Container>
                     .equals(str)))
             {
                 this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_INVALID,
-                        "The CMap is a string but it isn't an Identity-H/V"));
+                        font.getName() + ": The CMap is a string but it isn't an Identity-H/V"));
                 return;
             }
         }
@@ -227,17 +237,18 @@ public class Type0FontValidator extends FontValidator<Type0Container>
         {
             // CMap type is invalid
             this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_CMAP_INVALID_OR_MISSING,
-                    "The CMap type is invalid"));
+                    font.getName() + ": The CMap type is invalid"));
         }
     }
 
     /**
-     * Standard information of a stream element will be checked by the StreamValidationProcess.
-     * 
-     * This method checks mandatory fields of the CMap stream. This method checks too if the CMap stream is damaged
-     * using the CMapParser of the fontbox api.
-     * 
-     * @param aCMap
+     *
+     *
+     * This method checks mandatory fields of the CMap stream. This method also checks if the CMap
+     * stream is damaged using the CMapParser of the fontbox api. The standard information of a
+     * stream element will be checked by the StreamValidationProcess.
+     *
+     * @param aCMap the cmap stream.
      */
     private void processCMapAsStream(COSStream aCMap)
     {
@@ -245,16 +256,18 @@ public class Type0FontValidator extends FontValidator<Type0Container>
         COSBase sysinfo = aCMap.getItem(COSName.CIDSYSTEMINFO);
         checkCIDSystemInfo(sysinfo);
 
+        InputStream cmapStream = null;
         try
         {
             // extract information from the CMap stream
-            CMap fontboxCMap = new CMapParser().parse(aCMap.getUnfilteredStream());
+            cmapStream = aCMap.getUnfilteredStream();
+            CMap fontboxCMap = new CMapParser().parse(cmapStream);
             int wmValue = fontboxCMap.getWMode();
             String cmnValue = fontboxCMap.getName();
 
             /*
-             * According to the getInt javadoc, -1 is returned if there are no result. In the PDF Reference v1.7 p449,
-             * we can read that Default value is 0.
+             * According to the getInt javadoc, -1 is returned if there is no result. In the PDF Reference v1.7 p449,
+             * we can read that the default value is 0.
              */
             int wmode = aCMap.getInt(COSName.getPDFName(FONT_DICTIONARY_KEY_CMAP_WMODE),
                     FONT_DICTIONARY_DEFAULT_CMAP_WMODE);
@@ -264,22 +277,26 @@ public class Type0FontValidator extends FontValidator<Type0Container>
             if (cmapName == null || "".equals(cmapName) || wmode > 1)
             {
                 this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_CMAP_INVALID_OR_MISSING,
-                        "Some elements in the CMap dictionary are missing or invalid"));
+                        font.getName() + ": Some elements in the CMap dictionary are missing or invalid"));
             }
             else if (!(wmValue == wmode && cmapName.equals(cmnValue)))
             {
                 this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_CMAP_INVALID_OR_MISSING,
-                        "CMapName or WMode is inconsistent"));
+                        font.getName() + ": CMapName or WMode is inconsistent"));
             }
             else if (!FONT_DICTIONARY_VALUE_TYPE_CMAP.equals(type))
             {
                 this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_CMAP_INVALID_OR_MISSING,
-                        "The CMap type is invalid"));
+                        font.getName() + ": The CMap type is invalid"));
             }
         }
         catch (IOException e)
         {
-            this.fontContainer.push(new ValidationError(ERROR_FONTS_CID_CMAP_DAMAGED, "The CMap type is damaged"));
+            this.fontContainer.push(new ValidationError(ERROR_FONTS_CID_CMAP_DAMAGED, font.getName() + ": The CMap type is damaged", e));
+        }
+        finally
+        {
+            IOUtils.closeQuietly(cmapStream);
         }
 
         COSDictionary cmapUsed = (COSDictionary) aCMap.getDictionaryObject(COSName
@@ -337,7 +354,7 @@ public class Type0FontValidator extends FontValidator<Type0Container>
      */
     private void compareCIDSystemInfo(COSDictionary cmap)
     {
-        COSDictionary fontDictionary = (COSDictionary) font.getCOSObject();
+        COSDictionary fontDictionary = font.getCOSObject();
         COSArray array = COSUtils.getAsArray(fontDictionary.getItem(COSName.DESCENDANT_FONTS), cosDocument);
 
         if (array != null && array.size() > 0)
@@ -354,7 +371,7 @@ public class Type0FontValidator extends FontValidator<Type0Container>
             if (!regCF.equals(regCM) || !ordCF.equals(ordCM))
             {
                 this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_SYSINFO,
-                        "The CIDSystemInfo is inconsistent"));
+                        font.getName() + ": The CIDSystemInfo is inconsistent"));
             }
         }
     }

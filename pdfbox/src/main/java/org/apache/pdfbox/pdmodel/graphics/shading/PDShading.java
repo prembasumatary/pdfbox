@@ -18,7 +18,6 @@ package org.apache.pdfbox.pdmodel.graphics.shading;
 
 import java.awt.Paint;
 import java.io.IOException;
-
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
@@ -32,11 +31,10 @@ import org.apache.pdfbox.util.Matrix;
 /**
  * A Shading Resource.
  *
- * @author Andreas Lehmkühler
  */
 public abstract class PDShading implements COSObjectable
 {
-    private COSDictionary dictionary;
+    private final COSDictionary dictionary;
     private COSArray background = null;
     private PDRectangle bBox = null;
     private PDColorSpace colorSpace = null;
@@ -99,19 +97,10 @@ public abstract class PDShading implements COSObjectable
     /**
      * This will get the underlying dictionary.
      *
-     * @return the dictionary for this shading
+     * @return the dictionary for this shading.
      */
-    public COSDictionary getCOSDictionary()
-    {
-        return dictionary;
-    }
-
-    /**
-     * Convert this standard java object to a COS object.
-     *
-     * @return the cos object that matches this Java object
-     */
-    public COSBase getCOSObject()
+    @Override
+    public COSDictionary getCOSObject()
     {
         return dictionary;
     }
@@ -309,14 +298,7 @@ public abstract class PDShading implements COSObjectable
     {
         functionArray = null;
         function = newFunction;
-        if (newFunction == null)
-        {
-            getCOSDictionary().removeItem(COSName.FUNCTION);
-        }
-        else
-        {
-            getCOSDictionary().setItem(COSName.FUNCTION, newFunction);
-        }
+        getCOSObject().setItem(COSName.FUNCTION, newFunction);
     }
 
     /**
@@ -328,27 +310,20 @@ public abstract class PDShading implements COSObjectable
     {
         functionArray = null;
         function = null;
-        if (newFunctions == null)
-        {
-            getCOSDictionary().removeItem(COSName.FUNCTION);
-        }
-        else
-        {
-            getCOSDictionary().setItem(COSName.FUNCTION, newFunctions);
-        }
+        getCOSObject().setItem(COSName.FUNCTION, newFunctions);
     }
 
     /**
      * This will return the function used to convert the color values.
      *
      * @return the function
-     * @exception IOException if we are unable to create the PDFunction object
+     * @throws java.io.IOException if we were not able to create the function.
      */
     public PDFunction getFunction() throws IOException
     {
         if (function == null)
         {
-            COSBase dictionaryFunctionObject = getCOSDictionary().getDictionaryObject(COSName.FUNCTION);
+            COSBase dictionaryFunctionObject = getCOSObject().getDictionaryObject(COSName.FUNCTION);
             if (dictionaryFunctionObject != null)
             {
                 function = PDFunction.create(dictionaryFunctionObject);
@@ -360,20 +335,20 @@ public abstract class PDShading implements COSObjectable
     /**
      * Provide the function(s) of the shading dictionary as array.
      *
-     * @return an array containing the function(s)
-     * @throws IOException if something went wrong
+     * @return an array containing the function(s).
+     * @throws IOException if we were unable to create a function.
      */
     private PDFunction[] getFunctionsArray() throws IOException
     {
         if (functionArray == null)
         {
-            COSBase functionObject = getCOSDictionary().getDictionaryObject(COSName.FUNCTION);
+            COSBase functionObject = getCOSObject().getDictionaryObject(COSName.FUNCTION);
             if (functionObject instanceof COSDictionary)
             {
                 functionArray = new PDFunction[1];
                 functionArray[0] = PDFunction.create(functionObject);
             }
-            else
+            else if (functionObject instanceof COSArray)
             {
                 COSArray functionCOSArray = (COSArray) functionObject;
                 int numberOfFunctions = functionCOSArray.size();
@@ -382,6 +357,10 @@ public abstract class PDShading implements COSObjectable
                 {
                     functionArray[i] = PDFunction.create(functionCOSArray.get(i));
                 }
+            }
+            else
+            {
+                throw new IOException("mandatory /Function element must be a dictionary or an array");
             }
         }
         return functionArray;
@@ -396,10 +375,7 @@ public abstract class PDShading implements COSObjectable
      */
     public float[] evalFunction(float inputValue) throws IOException
     {
-        return evalFunction(new float[]
-        {
-            inputValue
-        });
+        return evalFunction(new float[] { inputValue });
     }
 
     /**
@@ -413,7 +389,7 @@ public abstract class PDShading implements COSObjectable
     {
         PDFunction[] functions = getFunctionsArray();
         int numberOfFunctions = functions.length;
-        float[] returnValues = null;
+        float[] returnValues;
         if (numberOfFunctions == 1)
         {
             returnValues = functions[0].eval(input);
@@ -447,7 +423,8 @@ public abstract class PDShading implements COSObjectable
     /**
      * Returns an AWT paint which corresponds to this shading
      *
-     * @param matrix the pattern matrix
+     * @param matrix the pattern matrix concatenated with that of the parent content stream,
+     *               this matrix which maps the pattern's internal coordinate system to user space
      * @return an AWT Paint instance
      */
     public abstract Paint toPaint(Matrix matrix);

@@ -18,9 +18,8 @@ package org.apache.fontbox.afm;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.InputStream;
 import java.io.IOException;
-
+import java.io.InputStream;
 import java.util.StringTokenizer;
 
 import org.apache.fontbox.util.BoundingBox;
@@ -30,7 +29,7 @@ import org.apache.fontbox.util.BoundingBox;
  *
  * @see <A href="http://partners.adobe.com/asn/developer/type/">AFM Documentation</A>
  *
- * @author Ben Litchfield (ben@benlitchfield.com)
+ * @author Ben Litchfield
  * 
  */
 public class AFMParser
@@ -302,16 +301,19 @@ public class AFMParser
     {
         java.io.File afmDir = new java.io.File( "Resources/afm" );
         java.io.File[] files = afmDir.listFiles();
-        for (File file : files)
+        if (files != null)
         {
-            if (file.getPath().toUpperCase().endsWith(".AFM"))
+            for (File file : files)
             {
-                long start = System.currentTimeMillis();
-                FileInputStream input = new FileInputStream(file);
-                AFMParser parser = new AFMParser( input );
-                parser.parse();
-                long stop = System.currentTimeMillis();
-                System.out.println("Parsing:" + file.getPath() + " " + (stop-start));
+                if (file.getPath().toUpperCase().endsWith(".AFM"))
+                {
+                    long start = System.currentTimeMillis();
+                    FileInputStream input = new FileInputStream(file);
+                    AFMParser parser = new AFMParser(input);
+                    parser.parse();
+                    long stop = System.currentTimeMillis();
+                    System.out.println("Parsing:" + file.getPath() + " " + (stop - start));
+                }
             }
         }
     }
@@ -981,7 +983,7 @@ public class AFMParser
     private String readLine() throws IOException
     {
         //First skip the whitespace
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         int nextByte = input.read();
         while( isWhitespace( nextByte ) )
         {
@@ -1008,7 +1010,7 @@ public class AFMParser
     private String readString() throws IOException
     {
         //First skip the whitespace
-        StringBuffer buf = new StringBuffer();
+        StringBuilder buf = new StringBuilder();
         int nextByte = input.read();
         while( isWhitespace( nextByte ) )
         {

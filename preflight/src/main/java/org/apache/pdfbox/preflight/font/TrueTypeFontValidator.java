@@ -62,11 +62,10 @@ public class TrueTypeFontValidator extends SimpleFontValidator<TrueTypeContainer
             if (fd.isNonSymbolic())
             {
                 Encoding encodingValue = ttFont.getEncoding();
-                if (encodingValue == null
-                        || !(encodingValue instanceof MacRomanEncoding || encodingValue instanceof WinAnsiEncoding))
+                if (!(encodingValue instanceof MacRomanEncoding || encodingValue instanceof WinAnsiEncoding))
                 {
                     this.fontContainer.push(new ValidationError(ERROR_FONTS_ENCODING,
-                            "The Encoding is invalid for the NonSymbolic TTF"));
+                            fd.getFontName() + ": The Encoding is invalid for the NonSymbolic TTF"));
                 }
             }
 
@@ -77,7 +76,7 @@ public class TrueTypeFontValidator extends SimpleFontValidator<TrueTypeContainer
             if (fd.isSymbolic() && ((COSDictionary) fontDictionary).getItem(COSName.ENCODING) != null)
             {
                 this.fontContainer.push(new ValidationError(ERROR_FONTS_ENCODING,
-                        "The Encoding should be missing for the Symbolic TTF"));
+                        fd.getFontName() + ": The Encoding should be missing for the Symbolic TTF"));
             }
         }
     }

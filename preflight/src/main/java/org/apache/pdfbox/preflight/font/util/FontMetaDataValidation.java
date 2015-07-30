@@ -29,7 +29,7 @@ import org.apache.pdfbox.pdmodel.font.PDFontDescriptor;
 import org.apache.pdfbox.preflight.PreflightConstants;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
 import org.apache.pdfbox.preflight.exception.ValidationException;
-import org.apache.pdfbox.preflight.font.FontValidator;
+import org.apache.pdfbox.preflight.font.descriptor.FontDescriptorHelper;
 import org.apache.xmpbox.XMPMetadata;
 import org.apache.xmpbox.schema.DublinCoreSchema;
 import org.apache.xmpbox.schema.XMPRightsManagementSchema;
@@ -69,66 +69,62 @@ public class FontMetaDataValidation
     {
         String fontName = fontDesc.getFontName();
         String noSubSetName = fontName;
-        if (FontValidator.isSubSet(fontName))
+        if (FontDescriptorHelper.isSubSet(fontName))
         {
-            noSubSetName = fontName.split(FontValidator.getSubSetPatternDelimiter())[1];
+            noSubSetName = fontName.split("\\+")[1];
         }
 
         DublinCoreSchema dc = metadata.getDublinCoreSchema();
-        if (dc != null)
+        if (dc != null && dc.getTitleProperty() != null)
         {
-            if (dc.getTitleProperty() != null)
+            String defaultTitle = dc.getTitle("x-default");
+            if (defaultTitle != null)
             {
-                String defaultTitle = dc.getTitle("x-default");
-                if (defaultTitle != null)
+                if (!defaultTitle.equals(fontName) && (noSubSetName != null && !defaultTitle.equals(noSubSetName)))
                 {
+                    StringBuilder sb = new StringBuilder(80);
+                    sb.append("FontName")
+                            .append(" present in the FontDescriptor dictionary doesn't match with XMP information dc:title of the Font File Stream.");
+                    ve.add(new ValidationError(PreflightConstants.ERROR_METADATA_MISMATCH, sb.toString()));
+                    return false;
+                }
 
-                    if (!defaultTitle.equals(fontName) && (noSubSetName != null && !defaultTitle.equals(noSubSetName)))
+                // --- default value is the right one
+                return true;
+            }
+            else
+            {
+                Iterator<AbstractField> it = dc.getTitleProperty().getContainer().getAllProperties().iterator();
+                boolean empty = true;
+                while (it.hasNext())
+                {
+                    empty = false;
+                    AbstractField tmp = it.next();
+                    if (tmp instanceof TextType)
                     {
-                        StringBuilder sb = new StringBuilder(80);
-                        sb.append("FontName")
-                                .append(" present in the FontDescriptor dictionary doesn't match with XMP information dc:title of the Font File Stream.");
-                        ve.add(new ValidationError(PreflightConstants.ERROR_METADATA_MISMATCH, sb.toString()));
-                        return false;
+                        String val = ((TextType) tmp).getStringValue();
+                        if (val.equals(fontName) || val.equals(noSubSetName))
+                        {
+                            // value found, return
+                            return true;
+                        }
                     }
+                }
 
-                    // --- default value is the right one
-                    return true;
+                // title doesn't match, it is an error.
+                StringBuilder sb = new StringBuilder(80);
+                sb.append("FontName");
+                if (empty)
+                {
+                    sb.append(" present in the FontDescriptor dictionary can't be found in XMP information the Font File Stream.");
+                    ve.add(new ValidationError(PreflightConstants.ERROR_METADATA_PROPERTY_MISSING, sb.toString()));
                 }
                 else
                 {
-                    Iterator<AbstractField> it = dc.getTitleProperty().getContainer().getAllProperties().iterator();
-                    boolean empty = true;
-                    while (it.hasNext())
-                    {
-                        empty = false;
-                        AbstractField tmp = it.next();
-                        if (tmp != null && tmp instanceof TextType)
-                        {
-                            if (((TextType) tmp).getStringValue().equals(fontName)
-                                    || (noSubSetName != null && ((TextType) tmp).getStringValue().equals(noSubSetName)))
-                            {
-                                // value found, return
-                                return true;
-                            }
-                        }
-                    }
-
-                    // title doesn't match, it is an error.
-                    StringBuilder sb = new StringBuilder(80);
-                    sb.append("FontName");
-                    if (empty)
-                    {
-                        sb.append(" present in the FontDescriptor dictionary can't be found in XMP information the Font File Stream.");
-                        ve.add(new ValidationError(PreflightConstants.ERROR_METADATA_PROPERTY_MISSING, sb.toString()));
-                    }
-                    else
-                    {
-                        sb.append(" present in the FontDescriptor dictionary doesn't match with XMP information dc:title of the Font File Stream.");
-                        ve.add(new ValidationError(PreflightConstants.ERROR_METADATA_MISMATCH, sb.toString()));
-                    }
-                    return false;
+                    sb.append(" present in the FontDescriptor dictionary doesn't match with XMP information dc:title of the Font File Stream.");
+                    ve.add(new ValidationError(PreflightConstants.ERROR_METADATA_MISMATCH, sb.toString()));
                 }
+                return false;
             }
         }
         return true;
@@ -149,6 +145,7 @@ public class FontMetaDataValidation
      *            The FontDescriptor dictionary
      * @param ve
      *            the list of validation error to update if the validation fails
+     * @return true if the analysis found no problems, false if it did.
      */
     public boolean analyseRights(XMPMetadata metadata, PDFontDescriptor fontDesc, List<ValidationError> ve)
     {

@@ -17,19 +17,19 @@
 package org.apache.pdfbox.pdmodel;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.URL;
 import java.util.ArrayList;
-import java.util.LinkedList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
@@ -38,22 +38,24 @@ import org.apache.pdfbox.cos.COSInteger;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.cos.COSStream;
-import org.apache.pdfbox.pdfparser.BaseParser;
-import org.apache.pdfbox.pdfparser.NonSequentialPDFParser;
+import org.apache.pdfbox.io.IOUtils;
+import org.apache.pdfbox.io.MemoryUsageSetting;
+import org.apache.pdfbox.io.RandomAccessBuffer;
+import org.apache.pdfbox.io.RandomAccessBufferedFileInputStream;
+import org.apache.pdfbox.io.RandomAccessReadInputStream;
+import org.apache.pdfbox.io.RandomAccessRead;
+import org.apache.pdfbox.io.ScratchFile;
 import org.apache.pdfbox.pdfparser.PDFParser;
 import org.apache.pdfbox.pdfwriter.COSWriter;
 import org.apache.pdfbox.pdmodel.common.COSArrayList;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.encryption.AccessPermission;
-import org.apache.pdfbox.pdmodel.encryption.DecryptionMaterial;
 import org.apache.pdfbox.pdmodel.encryption.PDEncryption;
 import org.apache.pdfbox.pdmodel.encryption.ProtectionPolicy;
 import org.apache.pdfbox.pdmodel.encryption.SecurityHandler;
 import org.apache.pdfbox.pdmodel.encryption.SecurityHandlerFactory;
-import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
-import org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy;
-import org.apache.pdfbox.pdmodel.encryption.StandardSecurityHandler;
+import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceDictionary;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAppearanceStream;
@@ -61,7 +63,7 @@ import org.apache.pdfbox.pdmodel.interactive.digitalsignature.PDSignature;
 import org.apache.pdfbox.pdmodel.interactive.digitalsignature.SignatureInterface;
 import org.apache.pdfbox.pdmodel.interactive.digitalsignature.SignatureOptions;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
-import org.apache.pdfbox.pdmodel.interactive.form.PDFieldTreeNode;
+import org.apache.pdfbox.pdmodel.interactive.form.PDField;
 import org.apache.pdfbox.pdmodel.interactive.form.PDSignatureField;
 
 /**
@@ -72,7 +74,9 @@ import org.apache.pdfbox.pdmodel.interactive.form.PDSignatureField;
  */
 public class PDDocument implements Closeable
 {
-    private COSDocument document;
+    private static final Log LOG = LogFactory.getLog(PDDocument.class);
+
+    private final COSDocument document;
 
     // cached values
     private PDDocumentInformation documentInformation;
@@ -89,14 +93,20 @@ public class PDDocument implements Closeable
     // this ID doesn't represent the actual documentId from the trailer
     private Long documentId;
 
-    // the PDF parser
-    private BaseParser parser;
-
-    // the File to read incremental data from
-    private File incrementalFile;
+    // the pdf to be read
+    private final RandomAccessRead pdfSource;
 
     // the access permissions of the document
     private AccessPermission accessPermission;
+    
+    // fonts to subset before saving
+    private final Set<PDFont> fontsToSubset = new HashSet<PDFont>();
+    
+    // Signature interface
+    private SignatureInterface signInterface;
+    
+    // document-wide cached resources
+    private ResourceCache resourceCache = new DefaultResourceCache();
     
     /**
      * Creates an empty PDF document.
@@ -104,7 +114,64 @@ public class PDDocument implements Closeable
      */
     public PDDocument()
     {
-        document = new COSDocument();
+        this(false);
+    }
+
+    /**
+     * Creates an empty PDF document.
+     * You need to add at least one page for the document to be valid.
+     *
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     */
+    public PDDocument(boolean useScratchFiles)
+    {
+        this(useScratchFiles, null);
+    }
+    
+    /**
+     * Creates an empty PDF document.
+     * You need to add at least one page for the document to be valid.
+     *
+     * @param memUsageSetting defines how memory is used for buffering PDF streams 
+     */
+    public PDDocument(MemoryUsageSetting memUsageSetting)
+    {
+        this(true, memUsageSetting);
+    }
+    
+    /**
+     * Internal constructor which support setting scratch file usage
+     * via boolean parameter or directly (new). This will be only needed
+     * as long as the new ScratchFile handling is tested.
+     * 
+     * <p>You need to add at least one page for the document to be valid.</p>
+     *
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * @param memUsageSetting defines how memory is used for buffering PDF streams 
+     */
+    private PDDocument(boolean useScratchFiles, MemoryUsageSetting memUsageSetting)
+    {
+        ScratchFile scratchFile = null;
+        if (memUsageSetting != null)
+        {
+            try
+            {
+                scratchFile = new ScratchFile(memUsageSetting);
+            }
+            catch (IOException ioe)
+            {
+                LOG.warn("Error initializing scratch file: " + ioe.getMessage() + ". Fall back to main memory usage only.");
+                try
+                {
+                    scratchFile = new ScratchFile(MemoryUsageSetting.setupMainMemoryOnly());
+                } catch ( IOException ioe2 ) {}
+            }
+        }
+        
+        
+        document = scratchFile != null ? new COSDocument(scratchFile) :
+                                         new COSDocument(useScratchFiles);
+        pdfSource = null;
 
         // First we need a trailer
         COSDictionary trailer = new COSDictionary();
@@ -175,7 +242,7 @@ public class PDDocument implements Closeable
         // Reserve ByteRange
         sigObject.setByteRange(new int[] { 0, 1000000000, 1000000000, 1000000000 });
 
-        getDocument().setSignatureInterface(signatureInterface);
+        signInterface = signatureInterface;
 
         //
         // Create SignatureForm for signature
@@ -190,12 +257,12 @@ public class PDDocument implements Closeable
             throw new IllegalStateException("Cannot sign an empty document");
         }
 
-        int startIndex = Math.max(Math.min(options.getPage(), 0), pageCount - 1);
+        int startIndex = Math.min(Math.max(options.getPage(), 0), pageCount - 1);
         PDPage page = catalog.getPages().get(startIndex);
 
         // Get the AcroForm from the Root-Dictionary and append the annotation
         PDAcroForm acroForm = catalog.getAcroForm();
-        catalog.getCOSObject().setNeedToBeUpdate(true);
+        catalog.getCOSObject().setNeedToBeUpdated(true);
 
         if (acroForm == null)
         {
@@ -204,7 +271,7 @@ public class PDDocument implements Closeable
         }
         else
         {
-            acroForm.getCOSObject().setNeedToBeUpdate(true);
+            acroForm.getCOSObject().setNeedToBeUpdated(true);
         }
 
         // For invisible signatures, the annotation has a rectangle array with values [ 0 0 0 0 ]. This annotation is
@@ -215,157 +282,193 @@ public class PDDocument implements Closeable
         // Create Annotation / Field for signature
         List<PDAnnotation> annotations = page.getAnnotations();
 
-        List<PDFieldTreeNode> fields = acroForm.getFields();
-        PDSignatureField signatureField = null;
-        if(fields == null) 
+        List<PDField> fields = acroForm.getFields();
+        if (fields == null)
         {
-            fields = new ArrayList<PDFieldTreeNode>();
+            fields = new ArrayList<PDField>();
             acroForm.setFields(fields);
         }
-        for (PDFieldTreeNode pdField : fields)
-        {
-            if (pdField instanceof PDSignatureField)
-            {
-                PDSignature signature = ((PDSignatureField) pdField).getSignature();
-                if (signature != null && signature.getDictionary().equals(sigObject.getDictionary()))
-                {
-                    signatureField = (PDSignatureField) pdField;
-                }
-            }
-        }
+        PDSignatureField signatureField = findSignatureField(fields, sigObject);
         if (signatureField == null)
         {
             signatureField = new PDSignatureField(acroForm);
-            signatureField.setSignature(sigObject); // append the signature object
-            signatureField.getWidget().setPage(page); // backward linking
+            // append the signature object
+            signatureField.setValue(sigObject);
+            // backward linking
+            signatureField.getWidgets().get(0).setPage(page);
         }
+        // to conform PDF/A-1 requirement:
+        // The /F key's Print flag bit shall be set to 1 and its Hidden, Invisible and NoView flag bits shall be set to 0
+        signatureField.getWidgets().get(0).setPrinted(true);
 
         // Set the AcroForm Fields
-        List<PDFieldTreeNode> acroFormFields = acroForm.getFields();
-        acroForm.getDictionary().setDirect(true);
+        List<PDField> acroFormFields = acroForm.getFields();
+        acroForm.getCOSObject().setDirect(true);
         acroForm.setSignaturesExist(true);
         acroForm.setAppendOnly(true);
 
-        boolean checkFields = false;
-        for (PDFieldTreeNode field : acroFormFields)
-        {
-            if (field instanceof PDSignatureField)
-            {
-                if (((PDSignatureField) field).getCOSObject().equals(signatureField.getCOSObject()))
-                {
-                    checkFields = true;
-                    signatureField.getCOSObject().setNeedToBeUpdate(true);
-                    break;
-                }
-            }
-        }
-        if (!checkFields)
-        {
-            acroFormFields.add(signatureField);
-        }
+        boolean checkFields = checkSignatureField(acroFormFields, signatureField);
 
         // Get the object from the visual signature
         COSDocument visualSignature = options.getVisualSignature();
 
         // Distinction of case for visual and non-visual signature
-        if (visualSignature == null) // non-visual signature
+        if (visualSignature == null)
         {
-            // Set rectangle for non-visual signature to 0 0 0 0
-            signatureField.getWidget().setRectangle(new PDRectangle()); // rectangle array [ 0 0 0 0 ]
-            // Clear AcroForm / Set DefaultRessource
-            acroForm.setDefaultResources(null);
-            // Set empty Appearance-Dictionary
-            PDAppearanceDictionary ap = new PDAppearanceDictionary();
-
-            COSStream apsStream = getDocument().createCOSStream();
-            apsStream.createUnfilteredStream();
-            PDAppearanceStream aps = new PDAppearanceStream(apsStream);
-            COSDictionary cosObject = (COSDictionary) aps.getCOSObject();
-            cosObject.setItem(COSName.SUBTYPE, COSName.FORM);
-            cosObject.setItem(COSName.BBOX, new PDRectangle());
-
-            ap.setNormalAppearance(aps);
-            ap.getCOSObject().setDirect(true);
-            signatureField.getWidget().setAppearance(ap);
+            prepareNonVisibleSignature(signatureField, acroForm);
         }
         else
-        // visual signature
         {
-            // Obtain visual signature object
-            List<COSObject> cosObjects = visualSignature.getObjects();
-
-            boolean annotNotFound = true;
-            boolean sigFieldNotFound = true;
-            COSDictionary acroFormDict = acroForm.getDictionary();
-            for (COSObject cosObject : cosObjects)
-            {
-                if (!annotNotFound && !sigFieldNotFound)
-                {
-                    break;
-                }
-
-                COSBase base = cosObject.getObject();
-                if (base != null && base instanceof COSDictionary)
-                {
-                    COSBase ft = ((COSDictionary) base).getItem(COSName.FT);
-                    COSBase type = ((COSDictionary) base).getItem(COSName.TYPE);
-                    COSBase apDict = ((COSDictionary) base).getItem(COSName.AP);
-
-                    // Search for signature annotation
-                    if (annotNotFound && COSName.ANNOT.equals(type))
-                    {
-                        COSDictionary cosBaseDict = (COSDictionary) base;
-
-                        // Read and set the Rectangle for visual signature
-                        COSArray rectAry = (COSArray) cosBaseDict.getItem(COSName.RECT);
-                        PDRectangle rect = new PDRectangle(rectAry);
-                        signatureField.getWidget().setRectangle(rect);
-                        annotNotFound = false;
-                    }
-
-                    // Search for Signature-Field
-                    if (sigFieldNotFound && COSName.SIG.equals(ft) && apDict != null)
-                    {
-                        COSDictionary cosBaseDict = (COSDictionary) base;
-
-                        // Appearance Dictionary auslesen und setzen
-                        PDAppearanceDictionary ap = new PDAppearanceDictionary(
-                                (COSDictionary) cosBaseDict.getItem(COSName.AP));
-                        ap.getCOSObject().setDirect(true);
-                        signatureField.getWidget().setAppearance(ap);
-
-                        // AcroForm DefaultRessource auslesen und setzen
-                        COSBase dr = cosBaseDict.getItem(COSName.DR);
-                        dr.setDirect(true);
-                        dr.setNeedToBeUpdate(true);
-                        acroFormDict.setItem(COSName.DR, dr);
-                        sigFieldNotFound = false;
-                    }
-                }
-            }
-
-            if (annotNotFound || sigFieldNotFound)
-            {
-                throw new IllegalArgumentException("Template is missing required objects");
-            }
+            prepareVisibleSignature(signatureField, acroForm, visualSignature);
         }
 
         // Get the annotations of the page and append the signature-annotation to it
-        if (annotations == null)
-        {
-            annotations = new COSArrayList();
-            page.setAnnotations(annotations);
-        }
-
         // take care that page and acroforms do not share the same array (if so, we don't need to add it twice)
         if (!(annotations instanceof COSArrayList &&
               acroFormFields instanceof COSArrayList &&
               ((COSArrayList) annotations).toList().equals(((COSArrayList) acroFormFields).toList()) &&
               checkFields))
         {
-            annotations.add(signatureField.getWidget());
+            annotations.add(signatureField.getWidgets().get(0));
         }
-        page.getCOSObject().setNeedToBeUpdate(true);
+        page.getCOSObject().setNeedToBeUpdated(true);
+    }
+
+    // search acroform field list for signature field with specific signature dictionary
+    private PDSignatureField findSignatureField(List<PDField> fields, PDSignature sigObject)
+    {
+        PDSignatureField signatureField = null;
+        for (PDField pdField : fields)
+        {
+            if (pdField instanceof PDSignatureField)
+            {
+                PDSignature signature = ((PDSignatureField) pdField).getSignature();
+                if (signature != null && signature.getCOSObject().equals(sigObject.getCOSObject()))
+                {
+                    signatureField = (PDSignatureField) pdField;
+                }
+            }
+        }
+        return signatureField;
+    }
+
+    // return true if the field already existed in the field list, in that case, it is marked for update
+    private boolean checkSignatureField(List<PDField> acroFormFields, PDSignatureField signatureField)
+    {
+        boolean checkFields = false;
+        for (PDField field : acroFormFields)
+        {
+            if (field instanceof PDSignatureField
+                    && field.getCOSObject().equals(signatureField.getCOSObject()))
+            {
+                checkFields = true;
+                signatureField.getCOSObject().setNeedToBeUpdated(true);
+                break;
+            }
+            // fixme: this code does not check non-terminal fields, there could be a descendant signature
+        }
+        if (!checkFields)
+        {
+            acroFormFields.add(signatureField);
+        }
+        return checkFields;
+    }
+
+    private void prepareVisibleSignature(PDSignatureField signatureField, PDAcroForm acroForm, 
+            COSDocument visualSignature)
+    {
+        // Obtain visual signature object
+        boolean annotNotFound = true;
+        boolean sigFieldNotFound = true;
+        for (COSObject cosObject : visualSignature.getObjects())
+        {
+            if (!annotNotFound && !sigFieldNotFound)
+            {
+                break;
+            }
+            
+            COSBase base = cosObject.getObject();
+            if (base instanceof COSDictionary)
+            {
+                COSDictionary cosBaseDict = (COSDictionary) base;
+
+                // Search for signature annotation
+                COSBase type = cosBaseDict.getDictionaryObject(COSName.TYPE);
+                if (annotNotFound && COSName.ANNOT.equals(type))
+                {
+                    assignSignatureRectangle(signatureField, cosBaseDict);
+                    annotNotFound = false;
+                }
+
+                // Search for signature field
+                COSBase ft = cosBaseDict.getDictionaryObject(COSName.FT);
+                COSBase apDict = cosBaseDict.getDictionaryObject(COSName.AP);
+                if (sigFieldNotFound && COSName.SIG.equals(ft) && apDict != null)
+                {
+                    assignAppearanceDictionary(signatureField, cosBaseDict);
+                    assignAcroFormDefaultResource(acroForm, cosBaseDict);
+                    sigFieldNotFound = false;
+                }
+            }
+        }
+        
+        if (annotNotFound || sigFieldNotFound)
+        {
+            throw new IllegalArgumentException("Template is missing required objects");
+        }
+    }
+
+    private void assignSignatureRectangle(PDSignatureField signatureField, COSDictionary cosBaseDict)
+    {
+        // Read and set the Rectangle for visual signature
+        COSArray rectAry = (COSArray) cosBaseDict.getDictionaryObject(COSName.RECT);
+        PDRectangle rect = new PDRectangle(rectAry);
+        signatureField.getWidgets().get(0).setRectangle(rect);
+    }
+
+    private void assignAppearanceDictionary(PDSignatureField signatureField, COSDictionary dict)
+    {
+        // read and set Appearance Dictionary
+        PDAppearanceDictionary ap
+                = new PDAppearanceDictionary((COSDictionary) dict.getDictionaryObject(COSName.AP));
+        ap.getCOSObject().setDirect(true);
+        signatureField.getWidgets().get(0).setAppearance(ap);
+    }
+
+    private void assignAcroFormDefaultResource(PDAcroForm acroForm, COSDictionary dict)
+    {
+        // read and set AcroForm DefaultResource
+        COSDictionary dr = (COSDictionary) dict.getDictionaryObject(COSName.DR);
+        if (dr != null)
+        {
+            dr.setDirect(true);
+            dr.setNeedToBeUpdated(true);
+            COSDictionary acroFormDict = acroForm.getCOSObject();
+            acroFormDict.setItem(COSName.DR, dr);
+        }
+    }
+
+    private void prepareNonVisibleSignature(PDSignatureField signatureField, PDAcroForm acroForm)
+            throws IOException
+    {
+        // Set rectangle for non-visual signature to rectangle array [ 0 0 0 0 ]
+        signatureField.getWidgets().get(0).setRectangle(new PDRectangle());
+        // Clear AcroForm / Set DefaultRessource
+        acroForm.setDefaultResources(null);
+        // Set empty Appearance-Dictionary
+        PDAppearanceDictionary ap = new PDAppearanceDictionary();
+        
+        // Create empty visual appearance stream
+        COSStream apsStream = getDocument().createCOSStream();
+        apsStream.createUnfilteredStream().close();
+        PDAppearanceStream aps = new PDAppearanceStream(apsStream);
+        COSDictionary cosObject = (COSDictionary) aps.getCOSObject();
+        cosObject.setItem(COSName.SUBTYPE, COSName.FORM);
+        cosObject.setItem(COSName.BBOX, new PDRectangle());
+        
+        ap.setNormalAppearance(aps);
+        ap.getCOSObject().setDirect(true);
+        signatureField.getWidgets().get(0).setAppearance(ap);
     }
 
     /**
@@ -380,7 +483,7 @@ public class PDDocument implements Closeable
             SignatureOptions options) throws IOException
     {
         PDDocumentCatalog catalog = getDocumentCatalog();
-        catalog.getCOSObject().setNeedToBeUpdate(true);
+        catalog.getCOSObject().setNeedToBeUpdated(true);
 
         PDAcroForm acroForm = catalog.getAcroForm();
         if (acroForm == null)
@@ -388,53 +491,31 @@ public class PDDocument implements Closeable
             acroForm = new PDAcroForm(this);
             catalog.setAcroForm(acroForm);
         }
-        else
-        {
-            acroForm.getCOSObject().setNeedToBeUpdate(true);
-        }
-
-        COSDictionary acroFormDict = acroForm.getDictionary();
+        COSDictionary acroFormDict = acroForm.getCOSObject();
         acroFormDict.setDirect(true);
-        acroFormDict.setNeedToBeUpdate(true);
+        acroFormDict.setNeedToBeUpdated(true);
         if (!acroForm.isSignaturesExist())
         {
-            acroForm.setSignaturesExist(true); // 1 if at least one signature field is available
+            // 1 if at least one signature field is available
+            acroForm.setSignaturesExist(true); 
         }
 
-        List<PDFieldTreeNode> field = acroForm.getFields();
+        List<PDField> acroformFields = acroForm.getFields();
 
         for (PDSignatureField sigField : sigFields)
         {
-            PDSignature sigObject = sigField.getSignature();
-            sigField.getCOSObject().setNeedToBeUpdate(true);
-
-            // Check if the field already exist
-            boolean checkFields = false;
-            for (PDFieldTreeNode fieldNode : field)
-            {
-                if (fieldNode instanceof PDSignatureField)
-                {
-                    if (fieldNode.getCOSObject().equals(sigField.getCOSObject()))
-                    {
-                        checkFields = true;
-                        sigField.getCOSObject().setNeedToBeUpdate(true);
-                        break;
-                    }
-                }
-            }
-
-            if (!checkFields)
-            {
-                field.add(sigField);
-            }
+            sigField.getCOSObject().setNeedToBeUpdated(true);
+            
+            // Check if the field already exists
+            checkSignatureField(acroformFields, sigField);
 
             // Check if we need to add a signature
             if (sigField.getSignature() != null)
             {
-                sigField.getCOSObject().setNeedToBeUpdate(true);
+                sigField.getCOSObject().setNeedToBeUpdated(true);
                 if (options == null)
                 {
-
+                    // TODO ??
                 }
                 addSignature(sigField.getSignature(), signatureInterface, options);
             }
@@ -474,41 +555,25 @@ public class PDDocument implements Closeable
      */
     public PDPage importPage(PDPage page) throws IOException
     {
-        PDPage importedPage = new PDPage(new COSDictionary(page.getCOSObject()));
-        InputStream is = null;
-        OutputStream os = null;
+        PDPage importedPage = new PDPage(new COSDictionary(page.getCOSObject()), resourceCache);
+        InputStream in = null;
         try
         {
-            PDStream src = page.getStream();
-            if (src != null)
+            in = page.getContents();
+            if (in != null)
             {
-                PDStream dest = new PDStream(document.createCOSStream());
+                PDStream dest = new PDStream(document, page.getContents());
+                dest.addCompression();
                 importedPage.setContents(dest);
-                os = dest.createOutputStream();
-
-                byte[] buf = new byte[10240];
-                int amountRead;
-                is = src.createInputStream();
-                while ((amountRead = is.read(buf, 0, 10240)) > -1)
-                {
-                    os.write(buf, 0, amountRead);
-                }
             }
             addPage(importedPage);
         }
-        finally
+        catch (IOException e)
         {
-            if (is != null)
-            {
-                is.close();
-            }
-            if (os != null)
-            {
-                os.close();
-            }
+            IOUtils.closeQuietly(in);
         }
-        return importedPage;
 
+        return importedPage;
     }
 
     /**
@@ -525,12 +590,26 @@ public class PDDocument implements Closeable
      * Constructor that uses an existing document. The COSDocument that is passed in must be valid.
      * 
      * @param doc The COSDocument that this document wraps.
-     * @param usedParser the parser which is used to read the pdf
+     * @param source the parser which is used to read the pdf
      */
-    public PDDocument(COSDocument doc, BaseParser usedParser)
+    public PDDocument(COSDocument doc, RandomAccessRead source)
+    {
+        this(doc, source, null);
+    }
+
+    /**
+     * Constructor that uses an existing document. The COSDocument that is passed in must be valid.
+     * 
+     * @param doc The COSDocument that this document wraps.
+     * @param source the parser which is used to read the pdf
+     * @param permission he access permissions of the pdf
+     * 
+     */
+    public PDDocument(COSDocument doc, RandomAccessRead source, AccessPermission permission)
     {
         document = doc;
-        parser = usedParser;
+        pdfSource = source;
+        accessPermission = permission;
     }
 
     /**
@@ -572,7 +651,7 @@ public class PDDocument implements Closeable
     public void setDocumentInformation(PDDocumentInformation info)
     {
         documentInformation = info;
-        document.getTrailer().setItem(COSName.INFO, info.getDictionary());
+        document.getTrailer().setItem(COSName.INFO, info.getCOSObject());
     }
 
     /**
@@ -609,17 +688,6 @@ public class PDDocument implements Closeable
     }
 
     /**
-     * @deprecated Use {@link #getEncryption()} instead.
-     *
-     * @return The encryption dictionary(most likely a PDStandardEncryption object)
-     */
-    @Deprecated
-    public PDEncryption getEncryptionDictionary()
-    {
-        return getEncryption();
-    }
-
-    /**
      * This will get the encryption dictionary for this document. This will still return the parameters if the document
      * was decrypted. As the encryption architecture in PDF documents is plugable this returns an abstract class,
      * but the only supported subclass at this time is a
@@ -629,12 +697,9 @@ public class PDDocument implements Closeable
      */
     public PDEncryption getEncryption()
     {
-        if (encryption == null)
+        if (encryption == null && isEncrypted())
         {
-            if (isEncrypted())
-            {
-                encryption = new PDEncryption(document.getEncryptionDictionary());
-            }
+            encryption = new PDEncryption(document.getEncryptionDictionary());
         }
         return encryption;
     }
@@ -676,14 +741,17 @@ public class PDDocument implements Closeable
      */
     public List<PDSignatureField> getSignatureFields() throws IOException
     {
-        List<PDSignatureField> fields = new LinkedList<PDSignatureField>();
+        List<PDSignatureField> fields = new ArrayList<PDSignatureField>();
         PDAcroForm acroForm = getDocumentCatalog().getAcroForm();
         if (acroForm != null)
         {
-            List<COSDictionary> signatureDictionary = document.getSignatureFields(false);
-            for (COSDictionary dict : signatureDictionary)
+            // fixme: non-terminal fields are ignored, could have descendant signatures
+            for (PDField field : acroForm.getFields())
             {
-                fields.add(new PDSignatureField(acroForm, dict, null));
+                if (field instanceof PDSignatureField)
+                {
+                    fields.add((PDSignatureField)field);
+                }
             }
         }
         return fields;
@@ -697,398 +765,400 @@ public class PDDocument implements Closeable
      */
     public List<PDSignature> getSignatureDictionaries() throws IOException
     {
-        List<COSDictionary> signatureDictionary = document.getSignatureDictionaries();
-        List<PDSignature> signatures = new LinkedList<PDSignature>();
-        for (COSDictionary dict : signatureDictionary)
+        List<PDSignature> signatures = new ArrayList<PDSignature>();
+        for (PDSignatureField field : getSignatureFields())
         {
-            signatures.add(new PDSignature(dict));
+            COSBase value = field.getCOSObject().getDictionaryObject(COSName.V);
+            if (value != null)
+            {
+                signatures.add(new PDSignature((COSDictionary)value));
+            }
         }
         return signatures;
     }
 
     /**
-     * This will decrypt a document.
-     *
-     * @deprecated This method is provided for compatibility reasons only. User should use the new
-     * security layer instead and the openProtection method especially.
-     * 
-     * @param password Either the user or owner password.
-     *
-     * @throws IOException If there is an error getting the stream data.
+     * Returns the list of fonts which will be subset before the document is saved.
      */
-    @Deprecated
-    public void decrypt(String password) throws IOException
+    Set<PDFont> getFontsToSubset()
     {
-        StandardDecryptionMaterial m = new StandardDecryptionMaterial(password);
-        openProtection(m);
+        return fontsToSubset;
     }
 
     /**
-     * This will <b>mark</b> a document to be encrypted. The actual encryption will occur when the document is saved.
-     *
-     * @deprecated This method is provided for compatibility reasons only. User should use the new security layer instead and the
-     * openProtection method especially.
+     * Parses a PDF.
      * 
-     * @param ownerPassword The owner password to encrypt the document.
-     * @param userPassword The user password to encrypt the document.
-
-     * @throws IOException If there is an error accessing the data.
-     */
-    @Deprecated
-    public void encrypt(String ownerPassword, String userPassword) throws IOException
-    {
-        if (!isEncrypted())
-        {
-            encryption = new PDEncryption();
-        }
-
-        getEncryption().setSecurityHandler(new StandardSecurityHandler(
-                new StandardProtectionPolicy(ownerPassword, userPassword, new AccessPermission())));
-    }
-
-    /**
-     * The owner password that was passed into the encrypt method. You should never use this method. This will not
-     * longer be valid once encryption has occured.
+     * @param file file to be loaded
      * 
-     * @return The owner password passed to the encrypt method.
+     * @return loaded document
      * 
-     * @deprecated Do not rely on this method anymore.
-     */
-    @Deprecated
-    public String getOwnerPasswordForEncryption()
-    {
-        return null;
-    }
-
-    /**
-     * The user password that was passed into the encrypt method. You should never use this method. This will not longer
-     * be valid once encryption has occured.
-     * 
-     * @return The user password passed to the encrypt method.
-     * 
-     * @deprecated Do not rely on this method anymore.
-     */
-    @Deprecated
-    public String getUserPasswordForEncryption()
-    {
-        return null;
-    }
-
-    /**
-     * This will load a document from a url.
-     * 
-     * @param url The url to load the PDF from.
-     * 
-     * @return The document that was loaded.
-     * 
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(URL url) throws IOException
-    {
-        return load(url.openStream());
-    }
-
-    /**
-     * This will load a document from a url. Used for skipping corrupt pdf objects
-     * 
-     * @param url The url to load the PDF from.
-     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
-     *            the file
-     * 
-     * @return The document that was loaded.
-     * 
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(URL url, boolean force) throws IOException
-    {
-        return load(url.openStream(), force);
-    }
-
-    /**
-     * This will load a document from a url. Used for skipping corrupt pdf objects
-     * 
-     * @param url The url to load the PDF from.
-     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
-     *            the file
-     * @param useScratchFiles enables the usage of a scratch file if set to true
-     * 
-     * @return The document that was loaded.
-     * 
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(URL url, boolean force, boolean useScratchFiles) throws IOException
-    {
-        return load(url.openStream(), force, useScratchFiles);
-    }
-
-    /**
-     * This will load a document from a file.
-     * 
-     * @param filename The name of the file to load.
-     * 
-     * @return The document that was loaded.
-     * 
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(String filename) throws IOException
-    {
-        return load(new File(filename));
-    }
-
-    /**
-     * This will load a document from a file. Allows for skipping corrupt pdf objects
-     * 
-     * @param filename The name of the file to load.
-     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
-     *            the file
-     * 
-     * @return The document that was loaded.
-     * 
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(String filename, boolean force) throws IOException
-    {
-        return load(new File(filename), force);
-    }
-
-    /**
-     * This will load a document from a file. Allows for skipping corrupt pdf objects
-     * 
-     * @param filename The name of the file to load.
-     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
-     *            the file
-     * @param useScratchFiles enables the usage of a scratch file if set to true
-     * 
-     * @return The document that was loaded.
-     * 
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(String filename, boolean force, boolean useScratchFiles) throws IOException
-    {
-        return load(new File(filename), force, useScratchFiles);
-    }
-
-    /**
-     * This will load a document from a file.
-     * 
-     * @param file The name of the file to load.
-     * 
-     * @return The document that was loaded.
-     * 
-     * @throws IOException If there is an error reading from the stream.
+     * @throws IOException in case of a file reading or parsing error
      */
     public static PDDocument load(File file) throws IOException
     {
-        return load(file, BaseParser.FORCE_PARSING, false);
+        return load(file, "", false);
     }
 
     /**
-     * This will load a document from a file. Allows for skipping corrupt pdf objects
-     *
-     * @param file The name of the file to load.
-     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
-     *            the file
-     *
-     * @return The document that was loaded.
-     *
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(File file, boolean force) throws IOException
-    {
-        return load(file, force , false);
-    }
-
-    /**
-     * This will load a document from a file. Allows for skipping corrupt pdf objects
-     *
-     * @param file The name of the file to load.
-     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
-     *            the file
+     * Parses a PDF.
+     * 
+     * @param file file to be loaded
      * @param useScratchFiles enables the usage of a scratch file if set to true
-     *
-     * @return The document that was loaded.
-     *
-     * @throws IOException If there is an error reading from the stream.
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument load(File file, boolean force, boolean useScratchFiles) throws IOException
+    public static PDDocument load(File file, boolean useScratchFiles) throws IOException
     {
-        PDFParser parser = new PDFParser(new FileInputStream(file), force, useScratchFiles);
-        parser.parse();
-        PDDocument doc = parser.getPDDocument();
-        doc.incrementalFile = file;
-        return doc;
+        return load(file, "", null, null, useScratchFiles);
     }
 
     /**
-     * This will load a document from an input stream.
+     * Parses a PDF.
      * 
-     * @param input The stream that contains the document.
+     * @param file file to be loaded
+     * @param memUsageSetting defines how memory is used for buffering PDF streams 
      * 
-     * @return The document that was loaded.
+     * @return loaded document
      * 
-     * @throws IOException If there is an error reading from the stream.
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(File file, MemoryUsageSetting memUsageSetting) throws IOException
+    {
+        return load(file, "", null, null, memUsageSetting);
+    }
+
+    /**
+     * Parses a PDF.
+     * 
+     * @param file file to be loaded
+     * @param password password to be used for decryption
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(File file, String password) throws IOException
+    {
+        return load(file, password, null, null, false);
+    }
+
+    /**
+     * Parses a PDF.
+     * 
+     * @param file file to be loaded
+     * @param password password to be used for decryption
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(File file, String password, boolean useScratchFiles) throws IOException
+    {
+        return load(file, password, null, null, useScratchFiles);
+    }
+
+    /**
+     * Parses a PDF.
+     * 
+     * @param file file to be loaded
+     * @param password password to be used for decryption
+     * @param memUsageSetting defines how memory is used for buffering PDF streams 
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(File file, String password, MemoryUsageSetting memUsageSetting) throws IOException
+    {
+        return load(file, password, null, null, memUsageSetting);
+    }
+
+    /**
+     * Parses a PDF.
+     * 
+     * @param file file to be loaded
+     * @param password password to be used for decryption
+     * @param keyStore key store to be used for decryption when using public key security 
+     * @param alias alias to be used for decryption when using public key security
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(File file, String password, InputStream keyStore, String alias)
+            throws IOException
+    {
+        return load(file, password, keyStore, alias, false);
+    }
+
+    /**
+     * Parses a PDF.
+     * 
+     * @param file file to be loaded
+     * @param password password to be used for decryption
+     * @param keyStore key store to be used for decryption when using public key security 
+     * @param alias alias to be used for decryption when using public key security
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(File file, String password, InputStream keyStore, String alias,
+            boolean useScratchFiles) throws IOException
+    {
+        RandomAccessBufferedFileInputStream raFile = new RandomAccessBufferedFileInputStream(file);
+        PDFParser parser = new PDFParser(raFile, password, keyStore, alias, useScratchFiles);
+        parser.parse();
+        return parser.getPDDocument();
+    }
+
+    /**
+     * Parses a PDF.
+     * 
+     * @param file file to be loaded
+     * @param password password to be used for decryption
+     * @param keyStore key store to be used for decryption when using public key security 
+     * @param alias alias to be used for decryption when using public key security
+     * @param memUsageSetting defines how memory is used for buffering PDF streams 
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(File file, String password, InputStream keyStore, String alias,
+                                  MemoryUsageSetting memUsageSetting) throws IOException
+    {
+        RandomAccessBufferedFileInputStream raFile = new RandomAccessBufferedFileInputStream(file);
+        PDFParser parser = new PDFParser(raFile, password, keyStore, alias, new ScratchFile(memUsageSetting));
+        parser.parse();
+        return parser.getPDDocument();
+    }
+
+    /**
+     * Parses a PDF. The given input stream is copied to the memory to enable random access to the pdf.
+     * 
+     * @param input stream that contains the document.
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
      */
     public static PDDocument load(InputStream input) throws IOException
     {
-        return load(input, BaseParser.FORCE_PARSING, false);
+        return load(input, "", null, null, false);
     }
 
     /**
-     * This will load a document from an input stream. Allows for skipping corrupt pdf objects
+     * Parses a PDF. Depending on the parameter useScratchFiles the given input
+     * stream is either copied to the memory or to a temporary file to enable
+     * random access to the pdf.
      * 
-     * @param input The stream that contains the document.
-     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
-     *            the file
-     * 
-     * @return The document that was loaded.
-     * 
-     * @throws IOException If there is an error reading from the stream.
-     */
-    public static PDDocument load(InputStream input, boolean force) throws IOException
-    {
-        return load(input, force, false);
-    }
-
-    /**
-     * This will load a document from an input stream. Allows for skipping corrupt pdf objects
-     * 
-     * @param input The stream that contains the document.
-     * @param force When true, the parser will skip corrupt pdf objects and will continue parsing at the next object in
-     *            the file
+     * @param input stream that contains the document.
      * @param useScratchFiles enables the usage of a scratch file if set to true
      * 
-     * @return The document that was loaded.
+     * @return loaded document
      * 
-     * @throws IOException If there is an error reading from the stream.
+     * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument load(InputStream input, boolean force, boolean useScratchFiles) throws IOException
+    public static PDDocument load(InputStream input, boolean useScratchFiles) throws IOException
     {
-        PDFParser parser = new PDFParser(input, force, useScratchFiles);
+        return load(input, "", null, null, useScratchFiles);
+    }
+
+    /**
+     * Parses a PDF. Depending on the parameter useScratchFiles the given input
+     * stream is either copied to the memory or to a temporary file to enable
+     * random access to the pdf.
+     * 
+     * @param input stream that contains the document.
+     * @param memUsageSetting defines how memory is used for buffering input stream and PDF streams 
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(InputStream input, MemoryUsageSetting memUsageSetting) throws IOException
+    {
+        return load(input, "", null, null, memUsageSetting);
+    }
+
+    /**
+     * Parses a PDF. The given input stream is copied to the memory to enable random access to the pdf.
+     * 
+     * @param input stream that contains the document.
+     * @param password password to be used for decryption
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(InputStream input, String password)
+            throws IOException
+    {
+        return load(input, password, null, null, false);
+    }
+
+    /**
+     * Parses a PDF. The given input stream is copied to the memory to enable random access to the pdf.
+     * 
+     * @param input stream that contains the document.
+     * @param password password to be used for decryption
+     * @param keyStore key store to be used for decryption when using public key security 
+     * @param alias alias to be used for decryption when using public key security
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(InputStream input, String password, InputStream keyStore, String alias)
+            throws IOException
+    {
+        return load(input, password, keyStore, alias, false);
+    }
+
+    /**
+     * Parses a PDF. Depending on the parameter useScratchFiles the given input
+     * stream is either copied to the memory or to a temporary file to enable
+     * random access to the pdf.
+     * 
+     * @param input stream that contains the document.
+     * @param password password to be used for decryption
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(InputStream input, String password, boolean useScratchFiles) throws IOException
+    {
+        return load(input, password, null, null, useScratchFiles);
+    }
+    
+    /**
+     * Parses a PDF. Depending on the parameter useScratchFiles the given input
+     * stream is either copied to the memory or to a temporary file to enable
+     * random access to the pdf.
+     * 
+     * @param input stream that contains the document.
+     * @param password password to be used for decryption
+     * @param memUsageSetting defines how memory is used for buffering input stream and PDF streams 
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(InputStream input, String password, MemoryUsageSetting memUsageSetting) throws IOException
+    {
+        return load(input, password, null, null, memUsageSetting);
+    }
+    
+    /**
+     * Parses a PDF. Depending on the parameter useScratchFiles the given input
+     * stream is either copied to the memory or to a temporary file to enable
+     * random access to the pdf.
+     * 
+     * @param input stream that contains the document.
+     * @param password password to be used for decryption
+     * @param keyStore key store to be used for decryption when using public key security 
+     * @param alias alias to be used for decryption when using public key security
+     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * 
+     * @return loaded document
+     * 
+     * @throws IOException in case of a file reading or parsing error
+     */
+    public static PDDocument load(InputStream input, String password, InputStream keyStore, 
+            String alias, boolean useScratchFiles) throws IOException
+    {
+        RandomAccessRead source;
+        if (useScratchFiles)
+        {
+            source = new RandomAccessBufferedFileInputStream(input);
+        }
+        else
+        {
+            source = new RandomAccessBuffer(input);
+        }
+        PDFParser parser = new PDFParser(source, password, keyStore, alias, useScratchFiles);
         parser.parse();
         return parser.getPDDocument();
     }
-    /**
-     * Parses PDF with non sequential parser.
-     * 
-     * @param file file to be loaded
-     * 
-     * @return loaded document
-     * 
-     * @throws IOException in case of a file reading or parsing error
-     */
-    public static PDDocument loadNonSeq(File file) throws IOException
-    {
-        return loadNonSeq(file, "", false);
-    }
 
     /**
-     * Parses PDF with non sequential parser.
+     * Parses a PDF. Depending on the parameter useScratchFiles the given input
+     * stream is either copied to the memory or to a temporary file to enable
+     * random access to the pdf.
      * 
-     * @param file file to be loaded
-     * @param useScratchFiles enables the usage of a scratch file if set to true
-     * 
-     * @return loaded document
-     * 
-     * @throws IOException in case of a file reading or parsing error
-     */
-    public static PDDocument loadNonSeq(File file, boolean useScratchFiles) throws IOException
-    {
-        return loadNonSeq(file, "", useScratchFiles);
-    }
-
-    /**
-     * Parses PDF with non sequential parser.
-     * 
-     * @param file file to be loaded
+     * @param input stream that contains the document.
      * @param password password to be used for decryption
+     * @param keyStore key store to be used for decryption when using public key security 
+     * @param alias alias to be used for decryption when using public key security
+     * @param memUsageSetting defines how memory is used for buffering input stream and PDF streams 
      * 
      * @return loaded document
      * 
      * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument loadNonSeq(File file, String password) throws IOException
+    public static PDDocument load(InputStream input, String password, InputStream keyStore, 
+                                  String alias, MemoryUsageSetting memUsageSetting) throws IOException
     {
-        return loadNonSeq(file, password, false);
-    }
-
-    /**
-     * Parses PDF with non sequential parser.
-     * 
-     * @param file file to be loaded
-     * @param password password to be used for decryption
-     * @param useScratchFiles enables the usage of a scratch file if set to true
-     * 
-     * @return loaded document
-     * 
-     * @throws IOException in case of a file reading or parsing error
-     */
-    public static PDDocument loadNonSeq(File file, String password, boolean useScratchFiles) throws IOException
-    {
-        NonSequentialPDFParser parser = new NonSequentialPDFParser(file, password, useScratchFiles);
+        ScratchFile scratchFile = new ScratchFile(memUsageSetting);
+        RandomAccessRead source = scratchFile.createBuffer(input);
+        PDFParser parser = new PDFParser(source, password, keyStore, alias, scratchFile);
         parser.parse();
         return parser.getPDDocument();
     }
 
     /**
-     * Parses PDF with non sequential parser.
+     * Parses a PDF.
      * 
-     * @param input stream that contains the document.
-     * 
-     * @return loaded document
-     * 
-     * @throws IOException in case of a file reading or parsing error
-     */
-    public static PDDocument loadNonSeq(InputStream input) throws IOException
-    {
-        return loadNonSeq(input, "", false);
-    }
-
-    /**
-     * Parses PDF with non sequential parser.
-     * 
-     * @param input stream that contains the document.
-     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * @param input byte array that contains the document.
      * 
      * @return loaded document
      * 
      * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument loadNonSeq(InputStream input, boolean useScratchFiles) throws IOException
+    public static PDDocument load(byte[] input) throws IOException
     {
-        return loadNonSeq(input, "", useScratchFiles);
+        return load(input, "");
     }
 
     /**
-     * Parses PDF with non sequential parser.
+     * Parses a PDF.
      * 
-     * @param input stream that contains the document.
+     * @param input byte array that contains the document.
      * @param password password to be used for decryption
      * 
      * @return loaded document
      * 
      * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument loadNonSeq(InputStream input, String password)
-            throws IOException
+    public static PDDocument load(byte[] input, String password) throws IOException
     {
-        return loadNonSeq(input, password, false);
+        return load(input, password, null, null);
     }
 
     /**
-     * Parses PDF with non sequential parser.
+     * Parses a PDF.
      * 
-     * @param input stream that contains the document.
+     * @param input byte array that contains the document.
      * @param password password to be used for decryption
-     * @param useScratchFiles enables the usage of a scratch file if set to true
+     * @param keyStore key store to be used for decryption when using public key security 
+     * @param alias alias to be used for decryption when using public key security
      * 
      * @return loaded document
      * 
      * @throws IOException in case of a file reading or parsing error
      */
-    public static PDDocument loadNonSeq(InputStream input, String password, boolean useScratchFiles)
-            throws IOException
+    public static PDDocument load(byte[] input, String password, InputStream keyStore, 
+            String alias) throws IOException
     {
-        NonSequentialPDFParser parser = new NonSequentialPDFParser(input, password, useScratchFiles);
+        RandomAccessRead source = new RandomAccessBuffer(input);
+        PDFParser parser = new PDFParser(source, password, keyStore, alias, false);
         parser.parse();
         return parser.getPDDocument();
     }
@@ -1126,57 +1196,47 @@ public class PDDocument implements Closeable
      */
     public void save(OutputStream output) throws IOException
     {
-        if (document == null)
+        if (document.isClosed())
         {
             throw new IOException("Cannot save a document which has been closed");
         }
-        COSWriter writer = null;
+
+        // subset designated fonts
+        for (PDFont font : fontsToSubset)
+        {
+            font.subset();
+        }
+        fontsToSubset.clear();
+        
+        // save PDF
+        COSWriter writer = new COSWriter(output);
         try
         {
-            writer = new COSWriter(output);
             writer.write(this);
             writer.close();
         }
         finally
         {
-            if (writer != null)
-            {
-                writer.close();
-            }
+            writer.close();
         }
     }
 
-    /**
-     * Save the pdf as incremental.
+   /**
+     * Save the PDF as an incremental update. This is only possible if the PDF was loaded from a file.
      *
-     * @deprecated Use {@link #saveIncremental(OutputStream output)} instead.
-     *
-     * @param fileName the filename to be used
-     * @throws IOException if the output could not be written
-     */
-    @Deprecated
-    public void saveIncremental(String fileName) throws IOException
-    {
-        saveIncremental(new BufferedInputStream(new FileInputStream(fileName)),
-                new BufferedOutputStream(new FileOutputStream(fileName, true)));
-    }
-
-    /**
-     * Save the PDF as an incremental update, explicitly providing the original input stream again.
-     *
-     * Use of this method is discouraged, use {@link #saveIncremental(OutputStream)} instead.
-     *
-     * @param input stream to read, must contain the same data used in the call to load().
      * @param output stream to write
      * @throws IOException if the output could not be written
+     * @throws IllegalStateException if the document was not loaded from a file.
      */
-    public void saveIncremental(InputStream input, OutputStream output) throws IOException
+    public void saveIncremental(OutputStream output) throws IOException
     {
+        InputStream input = new BufferedInputStream(
+                new RandomAccessReadInputStream(pdfSource, 0, pdfSource.length()));
         COSWriter writer = null;
         try
         {
             writer = new COSWriter(output, input);
-            writer.write(this);
+            writer.write(this, signInterface);
             writer.close();
         }
         finally
@@ -1186,23 +1246,6 @@ public class PDDocument implements Closeable
                 writer.close();
             }
         }
-    }
-
-    /**
-     * Save the PDF as an incremental update, if it was loaded from a File.
-     * This method can only be used when the PDDocument was created by passing a File or filename
-     * to one of the load() constructors.
-     *
-     * @param output stream to write
-     * @throws IOException if the output could not be written
-     */
-    public void saveIncremental(OutputStream output) throws IOException
-    {
-        if (incrementalFile == null)
-        {
-            throw new IOException("PDDocument.load must be called with a File or String");
-        }
-        saveIncremental(new FileInputStream(incrementalFile), output);
     }
 
     /**
@@ -1240,35 +1283,41 @@ public class PDDocument implements Closeable
     @Override
     public void close() throws IOException
     {
-        documentCatalog = null;
-        documentInformation = null;
-        encryption = null;
-        if (document != null)
+        if (!document.isClosed())
         {
+            // close all intermediate I/O streams
             document.close();
-            document = null;
+            
+            // close the source PDF stream, if we read from one
+            if (pdfSource != null)
+            {
+                pdfSource.close();
+            }
         }
-        if (parser != null)
-        {
-            parser.clearResources();
-            parser = null;
-        }
-        accessPermission = null;
     }
 
     /**
-     * Protects the document with the protection policy pp. The document content will be really encrypted when it will
-     * be saved. This method only marks the document for encryption.
+     * Protects the document with a protection policy. The document content will be really
+     * encrypted when it will be saved. This method only marks the document for encryption. It also
+     * sets {@link #setAllSecurityToBeRemoved(boolean)} to false if it was set to true previously and logs a
+     * warning.
      *
      * @see org.apache.pdfbox.pdmodel.encryption.StandardProtectionPolicy
      * @see org.apache.pdfbox.pdmodel.encryption.PublicKeyProtectionPolicy
-     * 
+     *
      * @param policy The protection policy.
-     * 
+     *
      * @throws IOException if there isn't any suitable security handler.
      */
     public void protect(ProtectionPolicy policy) throws IOException
     {
+        if (isAllSecurityToBeRemoved())
+        {
+            LOG.warn("do not call setAllSecurityToBeRemoved(true) before calling protect(), "
+                    + "as protect() implies setAllSecurityToBeRemoved(false)");
+            setAllSecurityToBeRemoved(false);
+        }
+        
         if (!isEncrypted())
         {
             encryption = new PDEncryption();
@@ -1281,33 +1330,6 @@ public class PDDocument implements Closeable
         }
 
         getEncryption().setSecurityHandler(securityHandler);
-    }
-
-    /**
-     * Tries to decrypt the document in memory using the provided decryption material.
-     * 
-     * @see org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial
-     * @see org.apache.pdfbox.pdmodel.encryption.PublicKeyDecryptionMaterial
-     * 
-     * @param decryptionMaterial The decryption material (password or certificate).
-     *
-     * @throws IOException If there is an error reading cryptographic information.
-     */
-    public void openProtection(DecryptionMaterial decryptionMaterial) throws IOException
-    {
-        if (isEncrypted())
-        {
-            SecurityHandler securityHandler = getEncryption().getSecurityHandler();
-            securityHandler.decryptDocument(this, decryptionMaterial);
-            accessPermission = securityHandler.getCurrentAccessPermission();
-            document.dereferenceObjectStreams();
-            document.setEncryptionDictionary(null);
-            getDocumentCatalog();
-        }
-        else
-        {
-            throw new IOException("Document is not encrypted");
-        }
     }
 
     /**
@@ -1325,53 +1347,6 @@ public class PDDocument implements Closeable
             accessPermission = AccessPermission.getOwnerAccessPermission();
         }
         return accessPermission;
-    }
-
-    /**
-     * Get the security handler that is used for document encryption.
-     *
-     * @deprecated Use {@link #getEncryption()}.
-     * {@link org.apache.pdfbox.pdmodel.encryption.PDEncryption#getSecurityHandler()}
-     *
-     * @return The handler used to encrypt/decrypt the document.
-     */
-    @Deprecated
-    public SecurityHandler getSecurityHandler()
-    {
-        if (isEncrypted() && getEncryption().hasSecurityHandler())
-        {
-            try
-            {
-                return getEncryption().getSecurityHandler();
-            }
-            catch (IOException e)
-            {
-                // will never happen because we checked hasSecurityHandler() first
-                throw new RuntimeException(e);
-            }
-        }
-        else
-        {
-            return null;
-        }
-    }
-
-    /**
-     * @deprecated Use protection policies instead.
-     *
-     * @param securityHandler security handler to be assigned to document
-     * @return true if security handler was set
-     */
-    @Deprecated
-    public boolean setSecurityHandler(SecurityHandler securityHandler)
-    {
-        if (isEncrypted())
-        {
-            return false;
-        }
-        encryption = new PDEncryption();
-        getEncryption().setSecurityHandler(securityHandler);
-        return true;
     }
 
     /**
@@ -1394,13 +1369,106 @@ public class PDDocument implements Closeable
         allSecurityToBeRemoved = removeAllSecurity;
     }
 
+    /**
+     * Provides the document ID.
+     *
+     * @return the dcoument ID
+     */
     public Long getDocumentId()
     {
         return documentId;
     }
 
+    /**
+     * Sets the document ID to the given value.
+     * 
+     * @param docId the new document ID
+     */
     public void setDocumentId(Long docId)
     {
         documentId = docId;
+    }
+    
+    /**
+     * Returns the PDF specification version this document conforms to.
+     *
+     * @return the PDF version (e.g. 1.4f)
+     */
+    public float getVersion()
+    {
+        float headerVersionFloat = getDocument().getVersion();
+        // there may be a second version information in the document catalog starting with 1.4
+        if (headerVersionFloat >= 1.4f)
+        {
+            String catalogVersion = getDocumentCatalog().getVersion();
+            float catalogVersionFloat = -1;
+            if (catalogVersion != null)
+            {
+                try
+                {
+                    catalogVersionFloat = Float.parseFloat(catalogVersion);
+                }
+                catch(NumberFormatException exception)
+                {
+                    LOG.error("Can't extract the version number of the document catalog.", exception);
+                }
+            }
+            // the most recent version is the correct one
+            return Math.max(catalogVersionFloat, headerVersionFloat);
+        }
+        else
+        {
+            return headerVersionFloat;
+        }
+    }
+
+    /**
+     * Sets the PDF specification version for this document.
+     *
+     * @param newVersion the new PDF version (e.g. 1.4f)
+     * 
+     */
+    public void setVersion(float newVersion)
+    {
+        float currentVersion = getVersion();
+        // nothing to do?
+        if (newVersion == currentVersion)
+        {
+            return;
+        }
+        // the version can't be downgraded
+        if (newVersion < currentVersion)
+        {
+            LOG.error("It's not allowed to downgrade the version of a pdf.");
+            return;
+        }
+        // update the catalog version if the document version is >= 1.4
+        if (getDocument().getVersion() >= 1.4f)
+        {
+            getDocumentCatalog().setVersion(Float.toString(newVersion));
+        }
+        else
+        {
+            // versions < 1.4f have a version header only
+            getDocument().setVersion(newVersion);
+        }
+    }
+
+    /**
+     * Returns the resource cache associated with this document, or null if there is none.
+     */
+    public ResourceCache getResourceCache()
+    {
+        return resourceCache;
+    }
+
+    /**
+     * Sets the resource cache associated with this document.
+     * 
+     * @param resourceCache A resource cache, or null.
+     */
+    public void setResourceCache(ResourceCache resourceCache)
+    {
+        this.resourceCache = resourceCache;
     }
 }

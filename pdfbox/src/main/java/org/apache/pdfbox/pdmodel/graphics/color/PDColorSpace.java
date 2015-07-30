@@ -20,6 +20,7 @@ import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSObject;
+import org.apache.pdfbox.pdmodel.MissingResourceException;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.common.COSObjectable;
 
@@ -56,7 +57,7 @@ public abstract class PDColorSpace implements COSObjectable
      * @param colorSpace the color space COS object
      * @param resources the current resources.
      * @return a new color space
-     * @throws MissingException if the color space is missing from the resources dictionary
+     * @throws MissingResourceException if the color space is missing in the resources dictionary
      * @throws IOException if the color space is unknown or cannot be created
      */
     public static PDColorSpace create(COSBase colorSpace,
@@ -71,6 +72,33 @@ public abstract class PDColorSpace implements COSObjectable
         {
             COSName name = (COSName)colorSpace;
 
+            // default color spaces
+            if (resources != null)
+            {
+                COSName defaultName = null;
+                if (name.equals(COSName.DEVICECMYK) &&
+                    resources.hasColorSpace(COSName.DEFAULT_CMYK))
+                {
+                    defaultName = COSName.DEFAULT_CMYK;
+                }
+                else if (name.equals(COSName.DEVICERGB) &&
+                         resources.hasColorSpace(COSName.DEFAULT_RGB))
+                {
+                    defaultName = COSName.DEFAULT_RGB;
+                }
+                else if (name.equals(COSName.DEVICEGRAY) &&
+                         resources.hasColorSpace(COSName.DEFAULT_GRAY))
+                {
+                    defaultName = COSName.DEFAULT_GRAY;
+                }
+
+                if (resources.hasColorSpace(defaultName))
+                {
+                    return resources.getColorSpace(defaultName);
+                }
+            }
+
+            // built-in color spaces
             if (name == COSName.DEVICECMYK || name == COSName.CMYK)
             {
                 return PDDeviceCMYK.INSTANCE;
@@ -89,16 +117,15 @@ public abstract class PDColorSpace implements COSObjectable
             }
             else if (resources != null)
             {
-                PDColorSpace cs = resources.getColorSpace(name);
-                if (cs == null)
+                if (!resources.hasColorSpace(name))
                 {
-                    throw new MissingException("Missing color space: " + name.getName());
+                    throw new MissingResourceException("Missing color space: " + name.getName());
                 }
-                return cs;
+                return resources.getColorSpace(name);
             }
             else
             {
-                throw new MissingException("Unknown color space: " + name.getName());
+                throw new MissingResourceException("Unknown color space: " + name.getName());
             }
         }
         else if (colorSpace instanceof COSArray)
@@ -237,13 +264,5 @@ public abstract class PDColorSpace implements COSObjectable
     public COSBase getCOSObject()
     {
         return array;
-    }
-
-    public static class MissingException extends IOException
-    {
-        private MissingException(String message)
-        {
-            super(message);
-        }
     }
 }

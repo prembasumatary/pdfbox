@@ -16,12 +16,12 @@
  */
 package org.apache.fontbox.cff;
 
-import org.apache.fontbox.type1.Type1CharStringReader;
-
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+
+import org.apache.fontbox.type1.Type1CharStringReader;
 
 /**
  * Represents a Type 2 CharString by converting it into an equivalent Type 1 CharString.
@@ -67,22 +67,6 @@ public class Type2CharString extends Type1CharString
     }
 
     /**
-     * Returns the advance width of this glyph.
-     */
-    public int getWidth()
-    {
-        int width = super.getWidth();
-        if (width == 0)
-        {
-            return defWidthX;
-        }
-        else
-        {
-            return width;
-        }
-    }
-
-    /**
      * Returns the Type 2 charstring sequence.
      */
     public List<Object> getType2Sequence()
@@ -99,6 +83,7 @@ public class Type2CharString extends Type1CharString
         type1Sequence = new ArrayList<Object>();
         pathCount = 0;
         CharStringHandler handler = new CharStringHandler() {
+            @Override
             public List<Integer> handleCommand(List<Integer> numbers, CharStringCommand command)
             {
                 return Type2CharString.this.handleCommand(numbers, command);
@@ -285,6 +270,10 @@ public class Type2CharString extends Type1CharString
         return numbers;
     }
 
+    /**
+     * @param numbers  
+     * @param horizontal 
+     */
     private void expandStemHints(List<Integer> numbers, boolean horizontal)
     {
         // TODO

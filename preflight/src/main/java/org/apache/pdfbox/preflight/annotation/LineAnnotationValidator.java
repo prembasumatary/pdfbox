@@ -48,16 +48,16 @@ public class LineAnnotationValidator extends AnnotationValidator
     }
 
     /**
-     * In addition of the AnnotationValidator.validate() method, this method executes the the checkIColors method.
+     * In addition of the AnnotationValidator.validate() method, this method executes the checkIColors method.
      * 
      * @see AnnotationValidator#validate()
      */
     @Override
     public boolean validate() throws ValidationException
     {
-        boolean isValide = super.validate();
-        isValide = isValide && checkIColors();
-        return isValide;
+        boolean isValid = super.validate();
+        isValid = checkIColors() && isValid;
+        return isValid;
     }
 
     /**
@@ -68,14 +68,11 @@ public class LineAnnotationValidator extends AnnotationValidator
      */
     protected boolean checkIColors() throws ValidationException
     {
-        if (this.pdLine.getInteriorColour() != null)
+        if (this.pdLine.getInteriorColor() != null && !searchRGBProfile())
         {
-            if (!searchRGBProfile())
-            {
-                ctx.addValidationError(new ValidationError(ERROR_ANNOT_FORBIDDEN_COLOR,
-                        "Annotation uses a Color profile which isn't the same than the profile contained by the OutputIntent"));
-                return false;
-            }
+            ctx.addValidationError(new ValidationError(ERROR_ANNOT_FORBIDDEN_COLOR,
+                    "Annotation uses a Color profile which isn't the same than the profile contained by the OutputIntent"));
+            return false;
         }
         return true;
     }
@@ -85,6 +82,7 @@ public class LineAnnotationValidator extends AnnotationValidator
      * 
      * @see AnnotationValidator#checkMandatoryFields()
      */
+    @Override
     protected boolean checkSpecificMandatoryFields()
     {
         return this.annotDictionary.containsKey(COSName.L);

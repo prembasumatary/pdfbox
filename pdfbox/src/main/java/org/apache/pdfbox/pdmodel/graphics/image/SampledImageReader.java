@@ -27,18 +27,16 @@ import java.awt.image.WritableRaster;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Arrays;
-
+import javax.imageio.stream.ImageInputStream;
+import javax.imageio.stream.MemoryCacheImageInputStream;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.cos.COSArray;
+import org.apache.pdfbox.cos.COSNumber;
 import org.apache.pdfbox.io.IOUtils;
+import org.apache.pdfbox.pdmodel.common.PDMemoryStream;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
 import org.apache.pdfbox.pdmodel.graphics.color.PDIndexed;
-
-import javax.imageio.stream.ImageInputStream;
-import javax.imageio.stream.MemoryCacheImageInputStream;
-import org.apache.pdfbox.cos.COSNumber;
-import org.apache.pdfbox.pdmodel.common.PDMemoryStream;
 
 /**
  * Reads a sampled image from a PDF file.
@@ -47,6 +45,10 @@ import org.apache.pdfbox.pdmodel.common.PDMemoryStream;
 final class SampledImageReader
 {
     private static final Log LOG = LogFactory.getLog(SampledImageReader.class);
+    
+    private SampledImageReader()
+    {
+    }
 
     /**
      * Returns an ARGB image filled with the given paint and using the given image as a mask.
@@ -195,8 +197,8 @@ final class SampledImageReader
             for (int y = 0; y < height; y++)
             {
                 int x = 0;
-                iis.read(buff);
-                for (int r = 0; r < rowLen; r++)
+                int readLen = iis.read(buff);
+                for (int r = 0; r < rowLen && r < readLen; r++)
                 {
                     int value = buff[r];
                     int mask = 128;
@@ -211,6 +213,11 @@ final class SampledImageReader
                             break;
                         }
                     }
+                }
+                if (readLen != rowLen)
+                {
+                    LOG.warn("premature EOF, image will be incomplete");
+                    break;
                 }
             }
 
@@ -237,23 +244,19 @@ final class SampledImageReader
         {
             // get the raster's underlying byte buffer
             byte[][] banks = ((DataBufferByte) raster.getDataBuffer()).getBankData();
-            byte[] source = IOUtils.toByteArray(input);
-
             final int width = pdImage.getWidth();
             final int height = pdImage.getHeight();
             final int numComponents = pdImage.getColorSpace().getNumberOfComponents();
             int max = width * height;
-
-            for (int c = 0; c < numComponents; c++)
+            byte[] tempBytes = new byte[numComponents];
+            for (int i = 0; i < max; i++)
             {
-                int sourceOffset = c;
-                for (int i = 0; i < max; i++)
+                input.read(tempBytes);
+                for (int c = 0; c < numComponents; c++)
                 {
-                    banks[c][i] = source[sourceOffset];
-                    sourceOffset += numComponents;
+                    banks[c][i] = tempBytes[0+c];
                 }
             }
-
             // use the color space to convert the image to RGB
             return pdImage.getColorSpace().toRGBImage(raster);
         }

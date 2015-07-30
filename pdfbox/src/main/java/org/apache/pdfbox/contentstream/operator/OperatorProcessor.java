@@ -42,7 +42,7 @@ public abstract class OperatorProcessor
      * Returns the processing context.
      * @return the processing context
      */
-    protected PDFStreamEngine getContext()
+    protected final PDFStreamEngine getContext()
     {
         return context;
     }

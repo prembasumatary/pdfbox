@@ -47,16 +47,15 @@ public class WidgetAnnotationValidator extends AnnotationValidator
     }
 
     /**
-     * In addition of the AnnotationValidator.validate() method, this method executes the the checkAAField method.
+     * In addition of the AnnotationValidator.validate() method, this method executes the checkAAField method.
      * 
      * @see AnnotationValidator#validate()
      */
     @Override
     public boolean validate() throws ValidationException
     {
-        boolean isValide = super.validate();
-        isValide = isValide && checkAAField();
-        return isValide;
+        boolean isValid = super.validate();
+        return checkAAField() && isValid;
     }
 
     /**

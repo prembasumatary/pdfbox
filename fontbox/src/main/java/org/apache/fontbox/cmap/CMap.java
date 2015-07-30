@@ -27,7 +27,7 @@ import java.util.Map;
 /**
  * This class represents a CMap file.
  *
- * @author Ben Litchfield (ben@benlitchfield.com)
+ * @author Ben Litchfield
  */
 public class CMap
 {
@@ -157,7 +157,7 @@ public class CMap
             }
 
             // we're done when we have enough bytes for the matched range
-            if (match.getStart().length == bytes.size())
+            if (match != null && match.getStart().length == bytes.size())
             {
                 return toInt(bytes);
             }
@@ -188,22 +188,20 @@ public class CMap
      */
     public int toCID(int code)
     {
-        if (codeToCid.containsKey(code))
+        Integer cid = codeToCid.get(code);
+        if (cid != null)
         {
-            return codeToCid.get(code);
+            return cid;
         }
-        else
+        for (CIDRange range : codeToCidRanges)
         {
-            for (CIDRange range : codeToCidRanges)
+            int ch = range.map((char)code);
+            if (ch != -1)
             {
-                int ch = range.map((char)code);
-                if (ch != -1)
-                {
-                    return ch;
-                }
+                return ch;
             }
-            return 0;
         }
+        return 0;
     }
     
     /**

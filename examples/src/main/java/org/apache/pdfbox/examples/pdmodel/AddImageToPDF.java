@@ -16,22 +16,11 @@
  */
 package org.apache.pdfbox.examples.pdmodel;
 
-import java.awt.image.BufferedImage;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.IOException;
-import javax.imageio.ImageIO;
-
-import org.apache.pdfbox.io.RandomAccessFile;
-
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
-
-import org.apache.pdfbox.pdmodel.edit.PDPageContentStream;
-
-import org.apache.pdfbox.pdmodel.graphics.image.CCITTFactory;
-import org.apache.pdfbox.pdmodel.graphics.image.JPEGFactory;
-import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 
 /**
@@ -39,8 +28,7 @@ import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
  *
  * The example is taken from the pdf file format specification.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.1 $
+ * @author Ben Litchfield
  */
 public class AddImageToPDF
 {
@@ -48,49 +36,34 @@ public class AddImageToPDF
      * Add an image to an existing PDF document.
      *
      * @param inputFile The input PDF to add the image to.
-     * @param image The filename of the image to put in the PDF.
+     * @param imagePath The filename of the image to put in the PDF.
      * @param outputFile The file to write to the pdf to.
      *
      * @throws IOException If there is an error writing the data.
      */
-    public void createPDFFromImage( String inputFile, String image, String outputFile )
+    public void createPDFFromImage( String inputFile, String imagePath, String outputFile )
             throws IOException
     {
         // the document
         PDDocument doc = null;
         try
         {
-            doc = PDDocument.load( inputFile );
+            doc = PDDocument.load( new File(inputFile) );
 
             //we will add the image to the first page.
             PDPage page = doc.getPage(0);
 
-            PDImageXObject ximage;
-            if( image.toLowerCase().endsWith( ".jpg" ) )
-            {
-                ximage = JPEGFactory.createFromStream(doc, new FileInputStream(image));
-            }
-            else if (image.toLowerCase().endsWith(".tif") || image.toLowerCase().endsWith(".tiff"))
-            {
-                ximage = CCITTFactory.createFromRandomAccess(doc, new RandomAccessFile(new File(image),"r"));
-            }
-            else if (image.toLowerCase().endsWith(".gif") || 
-                    image.toLowerCase().endsWith(".bmp") || 
-                    image.toLowerCase().endsWith(".png"))
-            {
-                BufferedImage bim = ImageIO.read(new File(image));
-                ximage = LosslessFactory.createFromImage(doc, bim);
-            }
-            else
-            {
-                throw new IOException( "Image type not supported: " + image );
-            }
+            // createFromFile is the easiest way with an image file
+            // if you already have the image in a BufferedImage, 
+            // call LosslessFactory.createFromImage() instead
+            PDImageXObject pdImage = PDImageXObject.createFromFile(imagePath, doc);
             PDPageContentStream contentStream = new PDPageContentStream(doc, page, true, true);
 
-            //contentStream.drawImage(ximage, 20, 20 );
+            // contentStream.drawImage(ximage, 20, 20 );
             // better method inspired by http://stackoverflow.com/a/22318681/535646
-            float scale = 1f; // reduce this value if the image is too large
-            contentStream.drawXObject(ximage, 20, 20, ximage.getWidth()*scale, ximage.getHeight()*scale);
+            // reduce this value if the image is too large
+            float scale = 1f;
+            contentStream.drawImage(pdImage, 20, 20, pdImage.getWidth()*scale, pdImage.getHeight()*scale);
 
             contentStream.close();
             doc.save( outputFile );

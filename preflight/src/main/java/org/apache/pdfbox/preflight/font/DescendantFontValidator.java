@@ -26,10 +26,7 @@ import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_CIDKEYE
 import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_FONTS_DICTIONARY_INVALID;
 import static org.apache.pdfbox.preflight.PreflightConstants.FONT_DICTIONARY_VALUE_CMAP_IDENTITY;
 
-
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-
 import java.io.InputStream;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
@@ -63,7 +60,8 @@ public abstract class DescendantFontValidator<T extends FontContainer> extends S
 
         if (!arePresent)
         {
-            this.fontContainer.push(new ValidationError(ERROR_FONTS_DICTIONARY_INVALID, "Required keys are missing"));
+            this.fontContainer.push(new ValidationError(ERROR_FONTS_DICTIONARY_INVALID, 
+                    font.getName() + ": Required keys are missing"));
         }
 
         checkCIDSystemInfo(fontDictionary.getItem(COSName.CIDSYSTEMINFO));
@@ -133,7 +131,7 @@ public abstract class DescendantFontValidator<T extends FontContainer> extends S
             if (!FONT_DICTIONARY_VALUE_CMAP_IDENTITY.equals(ctogStr))
             {
                 this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_CIDTOGID,
-                        "The CIDToGID entry is invalid"));
+                        font.getName() + ": The CIDToGID entry is invalid"));
             }
         }
         else if (COSUtils.isStream(ctog, cosDocument))
@@ -144,18 +142,19 @@ public abstract class DescendantFontValidator<T extends FontContainer> extends S
 
                 // todo: check the map's content? (won't pdfbox do this?)
                 InputStream is = stream.getUnfilteredStream();
-                ByteArrayOutputStream os = new ByteArrayOutputStream();
-                byte[] map = os.toByteArray();
+                is.close();
             }
             catch (IOException e)
             {
                 // map can be invalid, return a Validation Error
-                this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_CIDTOGID));
+                this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_CIDTOGID, 
+                        font.getName() + ": error getting CIDToGIDMap", e));
             }
         }
         else if (mandatory)
         {
-            this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_CIDTOGID));
+            this.fontContainer.push(new ValidationError(ERROR_FONTS_CIDKEYED_CIDTOGID, 
+                    font.getName() + ": mandatory CIDToGIDMap missing"));
         }
     }
 }

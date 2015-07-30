@@ -58,7 +58,10 @@ public class PDFAIdentificationValidation
         PDFAIdentificationSchema id = metadata.getPDFIdentificationSchema();
         if (id == null)
         {
-            ve.add(new ValidationError(ERROR_METADATA_PDFA_ID_MISSING));
+            ve.add(new ValidationError(ERROR_METADATA_PDFA_ID_MISSING,
+                    "PDF/A identification schema "
+                    + PDFAIdentificationSchema.class.getAnnotation(StructuredType.class).namespace()
+                    + " is missing"));
             return ve;
         }
 
@@ -102,7 +105,7 @@ public class PDFAIdentificationValidation
 
     protected void checkConformanceLevel(List<ValidationError> ve, String value)
     {
-        if (!(value.equals("A") || value.equals("B")))
+        if (value == null || !(value.equals("A") || value.equals("B")))
         {
             ve.add(new ValidationError(ERROR_METADATA_INVALID_PDFA_CONFORMANCE));
         }

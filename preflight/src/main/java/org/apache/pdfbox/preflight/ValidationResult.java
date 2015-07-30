@@ -210,6 +210,11 @@ public class ValidationResult
          * The underlying cause if the ValidationError was caused by a Throwable.
          */
         private Throwable cause = null;
+        
+        /**
+         * The page number on which the error happened, if known.
+         */
+        private Integer pageNumber = null;
 
         /**
          * Get the underlying cause if the ValidationError was caused by a
@@ -222,6 +227,24 @@ public class ValidationResult
         {
             return cause;
         }
+
+        /**
+         * Returns the page number, or null if not known.
+         */
+        public Integer getPageNumber()
+        {
+            return pageNumber;
+        }
+
+        /**
+         * Sets or resets the page number.
+         *
+         * @param pageNumber zero based page number or null if none is known.
+         */
+        public void setPageNumber(Integer pageNumber)
+        {
+            this.pageNumber = pageNumber;
+        }        
 
         /**
          * Create a validation error with the given error code
@@ -247,17 +270,21 @@ public class ValidationResult
             {
                 this.details = "CrossRef Syntax error";
             }
+            else if (errorCode.startsWith(PreflightConstants.ERROR_SYNTAX_TRAILER_OUTLINES_INVALID))
+            {
+                this.details = "Outlines invalid";
+            }
             else if (errorCode.startsWith(PreflightConstants.ERROR_SYNTAX_TRAILER))
             {
                 this.details = "Trailer Syntax error";
             }
             else if (errorCode.startsWith(PreflightConstants.ERROR_GRAPHIC_INVALID))
             {
-                this.details = "Invalid Graphis object";
+                this.details = "Invalid graphics object";
             }
             else if (errorCode.startsWith(PreflightConstants.ERROR_GRAPHIC_TRANSPARENCY))
             {
-                this.details = "Invalid Graphis transparency";
+                this.details = "Invalid graphics transparency";
             }
             else if (errorCode.startsWith(PreflightConstants.ERROR_GRAPHIC_UNEXPECTED_KEY))
             {
@@ -266,6 +293,10 @@ public class ValidationResult
             else if (errorCode.startsWith(PreflightConstants.ERROR_GRAPHIC_INVALID_COLOR_SPACE))
             {
                 this.details = "Invalid Color space";
+            }
+            else if (errorCode.startsWith(PreflightConstants.ERROR_GRAPHIC_MAIN))
+            {
+                this.details = "Unknown graphics error";
             }
             else if (errorCode.startsWith(PreflightConstants.ERROR_FONTS_INVALID_DATA))
             {
@@ -306,6 +337,10 @@ public class ValidationResult
             else if (errorCode.startsWith(PreflightConstants.ERROR_METADATA_MAIN))
             {
                 this.details = "Error on MetaData";
+            }
+            else if (errorCode.startsWith(PreflightConstants.ERROR_PDF_PROCESSING_MISSING))
+            {
+                this.details = "A Mandatory element is missing";
             }
             else
             {
@@ -385,26 +420,49 @@ public class ValidationResult
         }
 
         @Override
-        public int hashCode() {
+        public int hashCode()
+        {
             return errorCode.hashCode();
         }
 
         @Override
-        public boolean equals (Object o) {
-            if (o instanceof ValidationError) {
-                ValidationError ve = (ValidationError)o;
+        public boolean equals(Object o)
+        {
+            if (o instanceof ValidationError)
+            {
+                ValidationError ve = (ValidationError) o;
                 // check errorCode
-                if (errorCode==null && ve.errorCode!=null) {
+                if (errorCode == null && ve.errorCode != null)
+                {
                     return false;
-                } else if (!errorCode.equals(ve.errorCode)) {
+                }
+                else if (!errorCode.equals(ve.errorCode))
+                {
                     return false;
-                }  else if (!details.equals(ve.details)) {
+                }
+                else if (!details.equals(ve.details))
+                {
+                    return false;
+                }
+                else if (pageNumber != null && ve.pageNumber == null)
+                {
+                    return false;
+                }
+                else if (pageNumber == null && ve.pageNumber != null)
+                {
+                    return false;
+                }
+                else if (pageNumber != null && ve.pageNumber != null
+                        && pageNumber.compareTo(ve.pageNumber) != 0)
+                {
                     return false;
                 }
                 // check warning
-                return isWarning==ve.isWarning;
-                
-            } else {
+                return isWarning == ve.isWarning;
+
+            }
+            else
+            {
                 return false;
             }
         }

@@ -19,11 +19,11 @@ package org.apache.pdfbox.pdmodel.graphics.shading;
 import java.awt.PaintContext;
 import java.awt.Rectangle;
 import java.awt.geom.AffineTransform;
+import java.awt.geom.NoninvertibleTransformException;
 import java.awt.image.ColorModel;
 import java.awt.image.Raster;
 import java.awt.image.WritableRaster;
 import java.io.IOException;
-
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.cos.COSArray;
@@ -34,10 +34,8 @@ import org.apache.pdfbox.util.Matrix;
 /**
  * AWT PaintContext for radial shading.
  *
- * Performance improvement done as part of GSoC2014, Tilman Hausherr is the
- * mentor.
+ * Performance improvement done as part of GSoC2014, Tilman Hausherr is the mentor.
  *
- * @author Andreas Lehmkühler
  * @author Shaola Ren
  */
 public class RadialShadingContext extends ShadingContext implements PaintContext
@@ -48,20 +46,18 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
 
     private final float[] coords;
     private final float[] domain;
-    private float[] background;
-    private int rgbBackground;
     private final boolean[] extend;
     private final double x1x0;
     private final double y1y0;
     private final double r1r0;
-    private final double x1x0pow2;
-    private final double y1y0pow2;
     private final double r0pow2;
     private final float d1d0;
     private final double denom;
 
-    private final double longestDistance;
+    private final int factor;
     private final int[] colorTable;
+
+    private AffineTransform rat;
 
     /**
      * Constructor creates an instance to be used for fill operations.
@@ -69,35 +65,18 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
      * @param shading the shading type to be used
      * @param colorModel the color model to be used
      * @param xform transformation for user to device space
-     * @param ctm the transformation matrix
-     * @param dBounds device bounds
+     * @param matrix the pattern matrix concatenated with that of the parent content stream
+     * @param deviceBounds the bounds of the area to paint, in device units
+     * @throws IOException if there is an error getting the color space or doing color conversion.
      */
-    public RadialShadingContext(PDShadingType3 shading, ColorModel colorModel, AffineTransform xform,
-            Matrix ctm, Rectangle dBounds) throws IOException
+    public RadialShadingContext(PDShadingType3 shading, ColorModel colorModel,
+                                AffineTransform xform, Matrix matrix, Rectangle deviceBounds)
+                                throws IOException
     {
-        super(shading, colorModel, xform, ctm, dBounds);
+        super(shading, colorModel, xform, matrix);
         this.radialShadingType = shading;
         coords = shading.getCoords().toFloatArray();
 
-        if (ctm != null)
-        {
-            // transform the coords using the given matrix
-            AffineTransform at = ctm.createAffineTransform();
-            at.transform(coords, 0, coords, 0, 1);
-            at.transform(coords, 3, coords, 3, 1);
-            coords[2] *= ctm.getXScale();
-            coords[5] *= ctm.getXScale();
-        }
-        // transform coords to device space
-        xform.transform(coords, 0, coords, 0, 1);
-        xform.transform(coords, 3, coords, 3, 1);
-        // scale radius to device space
-        coords[2] *= xform.getScaleX();
-        coords[5] *= xform.getScaleX();
-        // a radius is always positive
-        coords[2] = Math.abs(coords[2]);
-        coords[5] = Math.abs(coords[5]);
-        
         // domain values
         if (this.radialShadingType.getDomain() != null)
         {
@@ -106,10 +85,7 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
         else
         {
             // set default values
-            domain = new float[]
-            {
-                0, 1
-            };
+            domain = new float[] { 0, 1 };
         }
 
         // extend values
@@ -123,93 +99,62 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
         else
         {
             // set default values
-            extend = new boolean[]
-            {
-                false, false
-            };
+            extend = new boolean[] { false, false };
         }
         // calculate some constants to be used in getRaster
         x1x0 = coords[3] - coords[0];
         y1y0 = coords[4] - coords[1];
         r1r0 = coords[5] - coords[2];
-        x1x0pow2 = Math.pow(x1x0, 2);
-        y1y0pow2 = Math.pow(y1y0, 2);
         r0pow2 = Math.pow(coords[2], 2);
-        denom = x1x0pow2 + y1y0pow2 - Math.pow(r1r0, 2);
+        denom = Math.pow(x1x0, 2) + Math.pow(y1y0, 2) - Math.pow(r1r0, 2);
         d1d0 = domain[1] - domain[0];
 
-        // get background values if available
-        COSArray bg = shading.getBackground();
-        if (bg != null)
+        try
         {
-            background = bg.toFloatArray();
-            rgbBackground = convertToRGB(background);
+            // get inverse transform to be independent of current user / device space 
+            // when handling actual pixels in getRaster()
+            rat = matrix.createAffineTransform().createInverse();
+            rat.concatenate(xform.createInverse());
         }
-        longestDistance = getLongestDis();
+        catch (NoninvertibleTransformException ex)
+        {
+            LOG.error(ex, ex);
+        }
+
+        // shading space -> device space
+        AffineTransform shadingToDevice = (AffineTransform)xform.clone();
+        shadingToDevice.concatenate(matrix.createAffineTransform());
+
+        // worst case for the number of steps is opposite diagonal corners, so use that
+        double dist = Math.sqrt(Math.pow(deviceBounds.getMaxX() - deviceBounds.getMinX(), 2) +
+                                Math.pow(deviceBounds.getMaxY() - deviceBounds.getMinY(), 2));
+        factor = (int) Math.ceil(dist);
+
+        // build the color table for the given number of steps
         colorTable = calcColorTable();
     }
 
-    // get the longest distance of two points which are located on these two circles
-    private double getLongestDis()
-    {
-        double centerToCenter = Math.sqrt(x1x0pow2 + y1y0pow2);
-        double rmin, rmax;
-        if (coords[2] < coords[5])
-        {
-            rmin = coords[2];
-            rmax = coords[5];
-        }
-        else
-        {
-            rmin = coords[5];
-            rmax = coords[2];
-        }
-        if (centerToCenter + rmin <= rmax)
-        {
-            return 2 * rmax;
-        }
-        else
-        {
-            return rmin + centerToCenter + coords[5];
-        }
-    }
-
     /**
-     * Calculate the color on the line connects two circles' centers and store
-     * the result in an array.
+     * Calculate the color on the line that connects two circles' centers and store the result in an
+     * array.
      *
-     * @return an array, index denotes the relative position, the corresponding
-     * value the color
+     * @return an array, index denotes the relative position, the corresponding value the color
      */
-    private int[] calcColorTable()
+    private int[] calcColorTable() throws IOException
     {
-        int[] map = new int[(int) longestDistance + 1];
-        if (longestDistance == 0 || d1d0 == 0)
+        int[] map = new int[factor + 1];
+        if (factor == 0 || d1d0 == 0)
         {
-            try
-            {
-                float[] values = radialShadingType.evalFunction(domain[0]);
-                map[0] = convertToRGB(values);
-            }
-            catch (IOException exception)
-            {
-                LOG.error("error while processing a function", exception);
-            }
+            float[] values = radialShadingType.evalFunction(domain[0]);
+            map[0] = convertToRGB(values);
         }
         else
         {
-            for (int i = 0; i <= longestDistance; i++)
+            for (int i = 0; i <= factor; i++)
             {
-                float t = domain[0] + d1d0 * i / (float) longestDistance;
-                try
-                {
-                    float[] values = radialShadingType.evalFunction(t);
-                    map[i] = convertToRGB(values);
-                }
-                catch (IOException exception)
-                {
-                    LOG.error("error while processing a function", exception);
-                }
+                float t = domain[0] + d1d0 * i / factor;
+                float[] values = radialShadingType.evalFunction(t);
+                map[i] = convertToRGB(values);
             }
         }
         return map;
@@ -218,15 +163,14 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
     @Override
     public void dispose()
     {
-        outputColorModel = null;
+        super.dispose();
         radialShadingType = null;
-        shadingColorSpace = null;
     }
 
     @Override
     public ColorModel getColorModel()
     {
-        return outputColorModel;
+        return super.getColorModel();
     }
 
     @Override
@@ -240,35 +184,32 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
         for (int j = 0; j < h; j++)
         {
             double currentY = y + j;
-            if (bboxRect != null)
+            if (bboxRect != null && (currentY < minBBoxY || currentY > maxBBoxY))
             {
-                if (currentY < minBBoxY || currentY > maxBBoxY)
-                {
-                    continue;
-                }
+                continue;
             }
             for (int i = 0; i < w; i++)
             {
                 double currentX = x + i;
-                if (bboxRect != null)
+                if (bboxRect != null && (currentX < minBBoxX || currentX > maxBBoxX))
                 {
-                    if (currentX < minBBoxX || currentX > maxBBoxX)
-                    {
-                        continue;
-                    }
+                    continue;
                 }
+
+                float[] values = new float[] { x + i, y + j };
+                rat.transform(values, 0, values, 0, 1);
+                currentX = values[0];
+                currentY = values[1];
+
                 useBackground = false;
-                float[] inputValues = calculateInputValues(x + i, y + j);
+                float[] inputValues = calculateInputValues(currentX, currentY);
                 if (Float.isNaN(inputValues[0]) && Float.isNaN(inputValues[1]))
                 {
-                    if (background != null)
-                    {
-                        useBackground = true;
-                    }
-                    else
+                    if (getBackground() == null)
                     {
                         continue;
                     }
+                    useBackground = true;
                 }
                 else
                 {
@@ -309,7 +250,7 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
                             {
                                 inputValue = inputValues[1];
                             }
-                            else if (background != null)
+                            else if (getBackground() != null)
                             {
                                 useBackground = true;
                             }
@@ -329,14 +270,11 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
                         }
                         else
                         {
-                            if (background != null)
-                            {
-                                useBackground = true;
-                            }
-                            else
+                            if (getBackground() == null)
                             {
                                 continue;
                             }
+                            useBackground = true;
                         }
                     }
                     // input value is out of range
@@ -349,14 +287,11 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
                         }
                         else
                         {
-                            if (background != null)
-                            {
-                                useBackground = true;
-                            }
-                            else
+                            if (getBackground() == null)
                             {
                                 continue;
                             }
+                            useBackground = true;
                         }
                     }
                 }
@@ -364,11 +299,11 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
                 if (useBackground)
                 {
                     // use the given backgound color values
-                    value = rgbBackground;
+                    value = getRgbBackground();
                 }
                 else
                 {
-                    int key = (int) (inputValue * longestDistance);
+                    int key = (int) (inputValue * factor);
                     value = colorTable[key];
                 }
                 int index = (j * w + i) * 4;
@@ -384,7 +319,7 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
         return raster;
     }
 
-    private float[] calculateInputValues(int x, int y)
+    private float[] calculateInputValues(double x, double y)
     {
         // According to Adobes Technical Note #5600 we have to do the following
         //
@@ -409,24 +344,16 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
         float root2 = (float) ((-p - root) / denom);
         if (denom < 0)
         {
-            return new float[]
-            {
-                root1, root2
-            };
+            return new float[] { root1, root2 };
         }
         else
         {
-            return new float[]
-            {
-                root2, root1
-            };
+            return new float[] { root2, root1 };
         }
     }
 
     /**
      * Returns the coords values.
-     *
-     * @return the coords values as array
      */
     public float[] getCoords()
     {
@@ -435,8 +362,6 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
 
     /**
      * Returns the domain values.
-     *
-     * @return the domain values as array
      */
     public float[] getDomain()
     {
@@ -445,8 +370,6 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
 
     /**
      * Returns the extend values.
-     *
-     * @return the extend values as array
      */
     public boolean[] getExtend()
     {
@@ -456,8 +379,7 @@ public class RadialShadingContext extends ShadingContext implements PaintContext
     /**
      * Returns the function.
      *
-     * @return the function
-     * @throws IOException if something goes wrong
+     * @throws java.io.IOException if we were not able to create the function.
      */
     public PDFunction getFunction() throws IOException
     {

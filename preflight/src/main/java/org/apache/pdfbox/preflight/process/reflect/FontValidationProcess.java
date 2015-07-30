@@ -34,7 +34,6 @@ import static org.apache.pdfbox.preflight.PreflightConstants.FONT_DICTIONARY_VAL
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDSimpleFont;
 import org.apache.pdfbox.pdmodel.font.PDTrueTypeFont;
-import org.apache.pdfbox.pdmodel.font.PDType1Font;
 import org.apache.pdfbox.pdmodel.font.PDType3Font;
 import org.apache.pdfbox.preflight.PreflightConstants;
 import org.apache.pdfbox.preflight.PreflightContext;
@@ -53,24 +52,31 @@ import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
 public class FontValidationProcess extends AbstractProcess
 {
 
+    @Override
     public void validate(PreflightContext context) throws ValidationException
     {
         PreflightPath vPath = context.getValidationPath();
-        if (vPath.isEmpty()) {
+        if (vPath.isEmpty()) 
+        {
             return;
         }
-        else if (!vPath.isExpectedType(PDFont.class)) 
+        if (!vPath.isExpectedType(PDFont.class)) 
         {
-            context.addValidationError(new ValidationError(PreflightConstants.ERROR_FONTS_INVALID_DATA, "Font validation process needs at least one PDFont object"));
+            context.addValidationError(new ValidationError(PreflightConstants.ERROR_FONTS_INVALID_DATA, 
+                    "Font validation process needs at least one PDFont object"));
         } 
         else
         {
             PDFont font = (PDFont) vPath.peek();
             FontContainer fontContainer = context.getFontContainer(font.getCOSObject());
             if (fontContainer == null)
-            { // if fontContainer isn't null the font is already checked
+            {
+                // if fontContainer isn't null the font is already checked
                 FontValidator<? extends FontContainer> validator = getFontValidator(context, font);
-                if (validator != null) validator.validate();
+                if (validator != null)
+                {
+                    validator.validate();
+                }
             }
         }
     }
@@ -87,32 +93,29 @@ public class FontValidationProcess extends AbstractProcess
         String subtype = font.getSubType();
         if (FONT_DICTIONARY_VALUE_TRUETYPE.equals(subtype))
         {
-            return new TrueTypeFontValidator(context, (PDTrueTypeFont)font);
+            return new TrueTypeFontValidator(context, (PDTrueTypeFont) font);
         }
-        else if (FONT_DICTIONARY_VALUE_MMTYPE.equals(subtype) || FONT_DICTIONARY_VALUE_TYPE1.equals(subtype))
+        if (FONT_DICTIONARY_VALUE_MMTYPE.equals(subtype) || FONT_DICTIONARY_VALUE_TYPE1.equals(subtype))
         {
-            return new Type1FontValidator(context, (PDSimpleFont)font);
+            return new Type1FontValidator(context, (PDSimpleFont) font);
         }
-        else if (FONT_DICTIONARY_VALUE_TYPE3.equals(subtype))
+        if (FONT_DICTIONARY_VALUE_TYPE3.equals(subtype))
         {
-            return new Type3FontValidator(context, (PDType3Font)font);
+            return new Type3FontValidator(context, (PDType3Font) font);
         }
-        else if (FONT_DICTIONARY_VALUE_COMPOSITE.equals(subtype))
+        if (FONT_DICTIONARY_VALUE_COMPOSITE.equals(subtype))
         {
             return new Type0FontValidator(context, font);
         }
-        else if (FONT_DICTIONARY_VALUE_TYPE2.equals(subtype) || FONT_DICTIONARY_VALUE_TYPE1C.equals(subtype)
+        if (FONT_DICTIONARY_VALUE_TYPE2.equals(subtype) || FONT_DICTIONARY_VALUE_TYPE1C.equals(subtype)
                 || FONT_DICTIONARY_VALUE_TYPE0C.equals(subtype) || FONT_DICTIONARY_VALUE_TYPE0.equals(subtype))
         {
             // ---- Font managed by a Composite font.
             // this dictionary will be checked by a CompositeFontValidator
             return null;
         }
-        else
-        {
-            context.addValidationError(new ValidationError(PreflightConstants.ERROR_FONTS_UNKNOWN_FONT_TYPE, "Unknown font type : " + subtype));
-            return null;
-        }
+        context.addValidationError(new ValidationError(PreflightConstants.ERROR_FONTS_UNKNOWN_FONT_TYPE, "Unknown font type: " + subtype));
+        return null;
     }
 
 }

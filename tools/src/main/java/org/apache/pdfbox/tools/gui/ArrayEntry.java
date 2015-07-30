@@ -16,25 +16,37 @@
  */
 package org.apache.pdfbox.tools.gui;
 
+import org.apache.pdfbox.cos.COSBase;
+
 /**
  * This is a simple class that will contain an index and a value.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.3 $
+ * @author Ben Litchfield
  */
 public class ArrayEntry
 {
     private int index;
-    private Object value;
+    private COSBase value;
+    private COSBase item;
 
     /**
      * This will get the value for this entry.
      *
      * @return The value for this entry.
      */
-    public Object getValue()
+    public COSBase getValue()
     {
         return value;
+    }
+
+    /**
+     * This will get the value for this entry.
+     *
+     * @return The value for this entry.
+     */
+    public COSBase getItem()
+    {
+        return item;
     }
 
     /**
@@ -42,9 +54,19 @@ public class ArrayEntry
      *
      * @param val the new value for this entry.
      */
-    public void setValue(Object val)
+    public void setValue(COSBase val)
     {
         this.value = val;
+    }
+
+    /**
+     * This will set the value for this entry.
+     *
+     * @param val the new value for this entry.
+     */
+    public void setItem(COSBase val)
+    {
+        this.item = val;
     }
 
     /**

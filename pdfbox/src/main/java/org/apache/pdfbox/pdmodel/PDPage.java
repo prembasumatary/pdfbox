@@ -16,26 +16,33 @@
  */
 package org.apache.pdfbox.pdmodel;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.SequenceInputStream;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
-
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.pdfbox.contentstream.PDContentStream;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSFloat;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSNumber;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.common.COSArrayList;
 import org.apache.pdfbox.pdmodel.common.COSObjectable;
-import org.apache.pdfbox.pdmodel.common.COSStreamArray;
 import org.apache.pdfbox.pdmodel.common.PDMetadata;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.pdmodel.interactive.action.PDPageAdditionalActions;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
 import org.apache.pdfbox.pdmodel.interactive.pagenavigation.PDThreadBead;
+import org.apache.pdfbox.pdmodel.interactive.pagenavigation.PDTransition;
 import org.apache.pdfbox.util.Matrix;
 
 /**
@@ -45,8 +52,14 @@ import org.apache.pdfbox.util.Matrix;
  */
 public class PDPage implements COSObjectable, PDContentStream
 {
+    /**
+     * Log instance
+     */
+    private static final Log LOG = LogFactory.getLog(PDPage.class);
+    
     private final COSDictionary page;
     private PDResources pageResources;
+    private ResourceCache resourceCache;
     private PDRectangle mediaBox;
 
     /**
@@ -80,6 +93,17 @@ public class PDPage implements COSObjectable, PDContentStream
     }
 
     /**
+     * Creates a new instance of PDPage for reading.
+     *
+     * @param pageDictionary A page dictionary in a PDF document.
+     */
+    PDPage(COSDictionary pageDictionary, ResourceCache resourceCache)
+    {
+        page = pageDictionary;
+        this.resourceCache = resourceCache;
+    }
+
+    /**
      * Convert this standard java object to a COS object.
      * 
      * @return The cos object that matches this Java object.
@@ -90,22 +114,70 @@ public class PDPage implements COSObjectable, PDContentStream
         return page;
     }
 
+    /**
+     * Returns the content streams which make up this page.
+     * 
+     * @return content stream iterator
+     */
+    public Iterator<PDStream> getContentStreams()
+    {
+        List<PDStream> streams = new ArrayList<PDStream>();
+        COSBase base = page.getDictionaryObject(COSName.CONTENTS);
+        if (base instanceof COSStream)
+        {
+            streams.add(new PDStream((COSStream) base));
+        }
+        else if (base instanceof COSArray && ((COSArray) base).size() > 0)
+        {
+            COSArray array = (COSArray)base;
+            for (int i = 0; i < streams.size(); i++)
+            {
+                COSStream stream = (COSStream) array.getObject(i);
+                streams.add(new PDStream(stream));
+            }
+        }
+        return streams.iterator();
+    }
+    
     @Override
-    public COSStream getContentStream()
+    public InputStream getContents() throws IOException
     {
         COSBase base = page.getDictionaryObject(COSName.CONTENTS);
         if (base instanceof COSStream)
         {
-            return (COSStream)base;
+            return ((COSStream)base).getUnfilteredStream();
         }
-        else if (base instanceof COSArray)
+        else if (base instanceof COSArray && ((COSArray) base).size() > 0)
         {
-            if (((COSArray)base).size() > 0)
+            COSArray streams = (COSArray)base;
+            byte[] delimiter = new byte[] { '\n' };
+            List<InputStream> inputStreams = new ArrayList<InputStream>();
+            for (int i = 0; i < streams.size(); i++)
             {
-                return new COSStreamArray((COSArray)base);
+                COSStream stream = (COSStream)streams.getObject(i);
+                inputStreams.add(stream.getUnfilteredStream());
+                inputStreams.add(new ByteArrayInputStream(delimiter));
             }
+            return new SequenceInputStream(Collections.enumeration(inputStreams));
         }
         return null;
+    }
+
+    /**
+     * Returns true if this page has contents.
+     */
+    public boolean hasContents()
+    {
+        COSBase contents = page.getDictionaryObject(COSName.CONTENTS);
+        if (contents instanceof COSStream)
+        {
+            return ((COSStream) contents).size() > 0;
+        }
+        else if (contents instanceof COSArray)
+        {
+            return ((COSArray) contents).size() > 0;
+        }
+        return false;
     }
 
     /**
@@ -122,7 +194,7 @@ public class PDPage implements COSObjectable, PDContentStream
             // note: it's an error for resources to not be present
             if (resources != null)
             {
-                pageResources = new PDResources(resources);
+                pageResources = new PDResources(resources, resourceCache);
             }
         }
         return pageResources;
@@ -192,6 +264,11 @@ public class PDPage implements COSObjectable, PDContentStream
             {
                 mediaBox = new PDRectangle(array);
             }
+        }
+        if (mediaBox == null)
+        {
+            LOG.debug("Can't find MediaBox, will use U.S. Letter");
+            mediaBox = PDRectangle.LETTER;
         }
         return mediaBox;
     }
@@ -380,16 +457,23 @@ public class PDPage implements COSObjectable, PDContentStream
     }
 
     /**
-     * A value representing the rotation. This will be null if not set at this level The number of
-     * degrees by which the page should be rotated clockwise when displayed or printed. The value
-     * must be a multiple of 90.
+     * Returns the rotation angle in degrees by which the page should be rotated
+     * clockwise when displayed or printed. Valid values in a PDF must be a
+     * multiple of 90.
+     *
+     * @return The rotation angle in degrees in normalized form (0, 90, 180 or
+     * 270) or 0 if invalid or not set at this level.
      */
     public int getRotation()
     {
-        COSNumber value = (COSNumber) PDPageTree.getInheritableAttribute(page, COSName.ROTATE);
-        if (value != null)
+        COSBase obj = PDPageTree.getInheritableAttribute(page, COSName.ROTATE);
+        if (obj instanceof COSNumber)
         {
-           return value.intValue();
+            int rotationAngle = ((COSNumber) obj).intValue();
+            if (rotationAngle % 90 == 0)
+            {
+                return (rotationAngle % 360 + 360) % 360;
+            }
         }
         return 0;
     }
@@ -405,18 +489,6 @@ public class PDPage implements COSObjectable, PDContentStream
     }
 
     /**
-     * This will get the contents of the PDF Page, in the case that the contents of the page is an
-     * array then then the entire array of streams will be be wrapped and appear as a single stream.
-     * 
-     * @return The page content stream.
-     * @throws IOException If there is an error obtaining the stream.
-     */
-    public PDStream getStream() throws IOException
-    {
-        return PDStream.createFromCOS(page.getDictionaryObject(COSName.CONTENTS));
-    }
-
-    /**
      * This will set the contents of this page.
      * 
      * @param contents The new contents of the page.
@@ -424,6 +496,21 @@ public class PDPage implements COSObjectable, PDContentStream
     public void setContents(PDStream contents)
     {
         page.setItem(COSName.CONTENTS, contents);
+    }
+
+    /**
+     * This will set the contents of this page.
+     *
+     * @param contents Array of new contents of the page.
+     */
+    public void setContents(List<PDStream> contents)
+    {
+        COSArray array = new COSArray();
+        for (PDStream stream : contents)
+        {
+            array.add(stream);
+        }
+        page.setItem(COSName.CONTENTS, array);
     }
 
     /**
@@ -519,10 +606,40 @@ public class PDPage implements COSObjectable, PDContentStream
     }
 
     /**
+     * @return The page transition associated with this page or null if no transition is defined
+     */
+    public PDTransition getTransition()
+    {
+        COSDictionary transitionDictionary = (COSDictionary) page.getDictionaryObject(COSName.TRANS);
+        return transitionDictionary == null ? null : new PDTransition(transitionDictionary);
+    }
+
+    /**
+     * @param transition The new transition to set on this page.
+     */
+    public void setTransition(PDTransition transition)
+    {
+        page.setItem(COSName.TRANS, transition);
+    }
+
+    /**
+     * Convenient method to set a transition and the display duration
+     * 
+     * @param transition The new transition to set on this page.
+     * @param duration The maximum length of time, in seconds, that the page shall be displayed during presentations
+     * before the viewer application shall automatically advance to the next page.
+     */
+    public void setTransition(PDTransition transition, float duration)
+    {
+        page.setItem(COSName.TRANS, transition);
+        page.setItem(COSName.DUR, new COSFloat(duration));
+    }
+
+    /**
      * This will return a list of the Annotations for this page.
      * 
-     * @return List of the PDAnnotation objects.
-     * @throws IOException If there is an error while creating the annotations.
+     * @return List of the PDAnnotation objects, never null.
+     * @throws IOException If there is an error while creating the annotation list.
      */
     public List<PDAnnotation> getAnnotations() throws IOException
     {
@@ -571,5 +688,13 @@ public class PDPage implements COSObjectable, PDContentStream
     public int hashCode()
     {
         return page.hashCode();
+    }
+
+    /**
+     * Returns the resource cache associated with this page, or null if there is none.
+     */
+    public ResourceCache getResourceCache()
+    {
+        return resourceCache;
     }
 }

@@ -16,6 +16,7 @@
  */
 package org.apache.pdfbox.pdmodel;
 
+import java.io.File;
 import java.util.Arrays;
 import java.util.List;
 
@@ -26,37 +27,40 @@ import junit.framework.TestCase;
  * @author Neil McErlean
  * @since 1.3.0
  */
-public class TestPDDocumentInformation extends TestCase {
+public class TestPDDocumentInformation extends TestCase
+{
 
-    public void testMetadataExtraction() throws Exception {
+    public void testMetadataExtraction() throws Exception
+    {
         PDDocument doc = null;
         try
         {
            // This document has been selected for this test as it contains custom metadata.
-           doc = PDDocument.load( "src/test/resources/input/hello3.pdf");
+           doc = PDDocument.load( new File("src/test/resources/input/hello3.pdf"));
            PDDocumentInformation info = doc.getDocumentInformation();
            
-           assertEquals("Wrong author",            "Brian Carrier", info.getAuthor());
-           assertNotNull("Wrong creationDate",        info.getCreationDate());
-           assertEquals("Wrong creator",           "Acrobat PDFMaker 8.1 for Word", info.getCreator());
-           assertNull  ("Wrong keywords",             info.getKeywords());
-           assertNotNull("Wrong modificationDate",    info.getModificationDate());
-           assertEquals("Wrong producer",          "Acrobat Distiller 8.1.0 (Windows)", info.getProducer());
-           assertNull  ("Wrong subject",              info.getSubject());
-           assertNull  ("Wrong trapped",              info.getTrapped());
+           assertEquals("Wrong author", "Brian Carrier", info.getAuthor());
+           assertNotNull("Wrong creationDate", info.getCreationDate());
+           assertEquals("Wrong creator", "Acrobat PDFMaker 8.1 for Word", info.getCreator());
+           assertNull("Wrong keywords", info.getKeywords());
+           assertNotNull("Wrong modificationDate", info.getModificationDate());
+           assertEquals("Wrong producer", "Acrobat Distiller 8.1.0 (Windows)", info.getProducer());
+           assertNull("Wrong subject", info.getSubject());
+           assertNull("Wrong trapped", info.getTrapped());
 
            List<String> expectedMetadataKeys = Arrays.asList(new String[] {"CreationDate", "Author", "Creator",
                                                                            "Producer", "ModDate", "Company",
                                                                            "SourceModified", "Title"});
            assertEquals("Wrong metadata key count", expectedMetadataKeys.size(),
                                                     info.getMetadataKeys().size());
-           for (String key : expectedMetadataKeys) {
+           for (String key : expectedMetadataKeys)
+           {
                assertTrue("Missing metadata key:" + key, info.getMetadataKeys().contains(key));
            }
            
            // Custom metadata fields.
-           assertEquals("Wrong company",           "Basis Technology Corp.", info.getCustomMetadataValue("Company"));
-           assertEquals("Wrong sourceModified",    "D:20080819181502", info.getCustomMetadataValue("SourceModified"));
+           assertEquals("Wrong company", "Basis Technology Corp.", info.getCustomMetadataValue("Company"));
+           assertEquals("Wrong sourceModified", "D:20080819181502", info.getCustomMetadataValue("SourceModified"));
         }
         finally
         {

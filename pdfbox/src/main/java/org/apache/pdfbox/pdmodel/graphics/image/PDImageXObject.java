@@ -16,6 +16,8 @@
  */
 package org.apache.pdfbox.pdmodel.graphics.image;
 
+import java.awt.RenderingHints;
+import java.lang.ref.SoftReference;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSName;
@@ -33,9 +35,12 @@ import java.awt.Graphics2D;
 import java.awt.Paint;
 import java.awt.image.BufferedImage;
 import java.awt.image.WritableRaster;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import javax.imageio.ImageIO;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -52,9 +57,9 @@ public final class PDImageXObject extends PDXObject implements PDImage
      */
     private static final Log LOG = LogFactory.getLog(PDImageXObject.class);
 
-    private BufferedImage cachedImage;
+    private SoftReference<BufferedImage> cachedImage;
     private PDColorSpace colorSpace;
-    private PDResources resources; // current resource dictionary (has color spaces)
+    private final PDResources resources; // current resource dictionary (has color spaces)
 
     /**
      * Creates a thumbnail Image XObject from the given COSBase and name.
@@ -113,6 +118,61 @@ public final class PDImageXObject extends PDXObject implements PDImage
     public PDImageXObject(PDStream stream, PDResources resources) throws IOException
     {
         this(stream, resources, stream.getStream().getDecodeResult());
+    }
+    
+    /**
+     * Create a PDImageXObject from an image file, see {@link #createFromFile(File, PDDocument)} for
+     * more details.
+     *
+     * @param imagePath the image file path.
+     * @param doc the document that shall use this PDImageXObject.
+     * @return a PDImageXObject.
+     * @throws IOException if there is an error when reading the file or creating the
+     * PDImageXObject, or if the image type is not supported.
+     */
+    public static PDImageXObject createFromFile(String imagePath, PDDocument doc) throws IOException
+    {
+        return createFromFile(new File(imagePath), doc);
+    }
+
+    /**
+     * Create a PDImageXObject from an image file. The file format is determined by the file name
+     * suffix. The following suffixes are supported: jpg, jpeg, tif, tiff, gif, bmp and png. This is
+     * a convenience method that calls {@link JPEGFactory#createFromStream},
+     * {@link CCITTFactory#createFromFile} or {@link ImageIO#read} combined with
+     * {@link LosslessFactory#createFromImage}. (The later can also be used to create a
+     * PDImageXObject from a BufferedImage).
+     *
+     * @param file the image file.
+     * @param doc the document that shall use this PDImageXObject.
+     * @return a PDImageXObject.
+     * @throws IOException if there is an error when reading the file or creating the
+     * PDImageXObject.
+     * @throws IllegalArgumentException if the image type is not supported.
+     */
+    public static PDImageXObject createFromFile(File file, PDDocument doc) throws IOException
+    {
+        String name = file.getName();
+        int dot = file.getName().lastIndexOf('.');
+        if (dot == -1)
+        {
+            throw new IOException("Image type not supported: " + name);
+        }
+        String ext = name.substring(dot + 1).toLowerCase();
+        if ("jpg".equals(ext) || "jpeg".equals(ext))
+        {
+            return JPEGFactory.createFromStream(doc, new FileInputStream(file));
+        }
+        if ("tif".equals(ext) || "tiff".equals(ext))
+        {
+            return CCITTFactory.createFromFile(doc, file);
+        }
+        if ("gif".equals(ext) || "bmp".equals(ext) || "png".equals(ext))
+        {
+            BufferedImage bim = ImageIO.read(file);
+            return LosslessFactory.createFromImage(doc, bim);
+        }
+        throw new IOException("Image type not supported: " + name);
     }
 
     // repairs parameters using decode result
@@ -173,14 +233,18 @@ public final class PDImageXObject extends PDXObject implements PDImage
 
     /**
      * {@inheritDoc}
-     * The returned images are cached for the lifetime of this XObject.
+     * The returned images are cached via a SoftReference.
      */
     @Override
     public BufferedImage getImage() throws IOException
     {
         if (cachedImage != null)
         {
-            return cachedImage;
+            BufferedImage cached = cachedImage.get();
+            if (cached != null)
+            {
+                return cached;
+            }
         }
 
         // get image as RGB
@@ -202,7 +266,7 @@ public final class PDImageXObject extends PDXObject implements PDImage
             }
         }
 
-        cachedImage = image;
+        cachedImage = new SoftReference<BufferedImage>(image);
         return image;
     }
 
@@ -244,19 +308,20 @@ public final class PDImageXObject extends PDXObject implements PDImage
         int width = image.getWidth();
         int height = image.getHeight();
 
-        // compose to ARGB
-        BufferedImage masked = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
-
-        // scale mask to fit image
-        if (mask.getWidth() != width || mask.getHeight() != height)
+        // scale mask to fit image, or image to fit mask, whichever is larger
+        if (mask.getWidth() < width || mask.getHeight() < height)
         {
-            BufferedImage mask2 = new BufferedImage(width, height, mask.getType());
-            Graphics2D g = mask2.createGraphics();
-            g.drawImage(mask, 0, 0, width, height, 0, 0, mask.getWidth(), mask.getHeight(), null);
-            g.dispose();
-            mask = mask2;
+            mask = scaleImage(mask, width, height);
+        }
+        else if (mask.getWidth() > width || mask.getHeight() > height)
+        {
+            width = mask.getWidth();
+            height = mask.getHeight();
+            image = scaleImage(image, width, height);
         }
 
+        // compose to ARGB
+        BufferedImage masked = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
         WritableRaster src = image.getRaster();
         WritableRaster dest = masked.getRaster();
         WritableRaster alpha = mask.getRaster();
@@ -292,6 +357,22 @@ public final class PDImageXObject extends PDXObject implements PDImage
     }
 
     /**
+     * High-quality image scaling.
+     */
+    private BufferedImage scaleImage(BufferedImage image, int width, int height)
+    {
+        BufferedImage image2 = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image2.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                           RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING,
+                           RenderingHints.VALUE_RENDER_QUALITY);
+        g.drawImage(image, 0, 0, width, height, 0, 0, image.getWidth(), image.getHeight(), null);
+        g.dispose();
+        return image2;
+    }
+
+    /**
      * Returns the Mask Image XObject associated with this image, or null if there is none.
      * @return Mask Image XObject
      */
@@ -308,7 +389,8 @@ public final class PDImageXObject extends PDXObject implements PDImage
             COSStream cosStream = (COSStream)getCOSStream().getDictionaryObject(COSName.MASK);
             if (cosStream != null)
             {
-                return new PDImageXObject(new PDStream(cosStream), null); // always DeviceGray
+                // always DeviceGray
+                return new PDImageXObject(new PDStream(cosStream), null);
             }
             return null;
         }
@@ -337,7 +419,8 @@ public final class PDImageXObject extends PDXObject implements PDImage
         COSStream cosStream = (COSStream)getCOSStream().getDictionaryObject(COSName.SMASK);
         if (cosStream != null)
         {
-            return new PDImageXObject(new PDStream(cosStream), null);  // always DeviceGray
+            // always DeviceGray
+            return new PDImageXObject(new PDStream(cosStream), null);
         }
         return null;
     }
@@ -443,7 +526,7 @@ public final class PDImageXObject extends PDXObject implements PDImage
     public COSArray getDecode()
     {
         COSBase decode = getCOSStream().getDictionaryObject(COSName.DECODE);
-        if (decode != null && decode instanceof COSArray)
+        if (decode instanceof COSArray)
         {
             return (COSArray) decode;
         }
@@ -466,6 +549,7 @@ public final class PDImageXObject extends PDXObject implements PDImage
      * This will get the suffix for this image type, e.g. jpg/png.
      * @return The image suffix or null if not available.
      */
+    @Override
     public String getSuffix()
     {
         List<COSName> filters = getPDStream().getFilters();

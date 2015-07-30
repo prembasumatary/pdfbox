@@ -16,24 +16,27 @@
  */
 package org.apache.pdfbox.pdmodel.interactive.form;
 
+import java.io.File;
 import java.io.IOException;
-
 import junit.framework.Test;
 import junit.framework.TestCase;
 import junit.framework.TestSuite;
-
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.cos.COSString;
 import org.apache.pdfbox.pdmodel.PDDocument;
 
 /**
  * This will test the form fields in PDFBox.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.4 $
+ * @author Ben Litchfield
  */
 public class TestFields extends TestCase
 {
     //private static Logger log = Logger.getLogger(TestFDF.class);
 
+    private static final String PATH_OF_PDF = "src/test/resources/org/apache/pdfbox/pdmodel/interactive/form/AcroFormsBasicFields.pdf";
+
+    
     /**
      * Constructor.
      *
@@ -110,11 +113,6 @@ public class TestFields extends TestCase
             assertTrue( textBox.isComb() );
             textBox.setComb( true );
             assertTrue( textBox.isComb() );
-
-
-
-
-
         }
         finally
         {
@@ -124,5 +122,74 @@ public class TestFields extends TestCase
             }
         }
     }
+    
+    /**
+     * This will test some form fields functionality based with 
+     * a sample form.
+     *
+     * @throws IOException If there is an error creating the field.
+     */
+    public void testAcroFormsBasicFields() throws IOException
+    {
+        PDDocument doc = null;
+        
+        try
+        {
+            doc = PDDocument.load(new File(PATH_OF_PDF));
+            
+            // get and assert that there is a form
+            PDAcroForm form = doc.getDocumentCatalog().getAcroForm();
+            assertNotNull(form);
+            
+            // assert that there is no value, set the field value and
+            // ensure it has been set 
+            PDTextField textField = (PDTextField)form.getField("TextField");
+            assertNull(textField.getCOSObject().getItem(COSName.V));
+            textField.setValue("field value");
+            assertNotNull(textField.getCOSObject().getItem(COSName.V));
+            assertEquals(textField.getValue(),"field value");
+            
+            // assert when setting to null the key has also been removed
+            assertNotNull(textField.getCOSObject().getItem(COSName.V));
+            textField.setValue(null);
+            assertNull(textField.getCOSObject().getItem(COSName.V));
+            
+            // get the TextField with a DV entry
+            textField = (PDTextField)form.getField("TextField-DefaultValue");
+            assertNotNull(textField);
+            assertEquals(textField.getDefaultValue(),"DefaultValue");
+            assertEquals(textField.getDefaultValue(),
+                    ((COSString)textField.getCOSObject().getDictionaryObject(COSName.DV)).getString());
+            assertEquals(textField.getDefaultAppearance(),"/Helv 12 Tf 0 g");
 
+            // get a rich text field with a  DV entry
+            textField = (PDTextField)form.getField("RichTextField-DefaultValue");
+            assertNotNull(textField);
+            assertEquals(textField.getDefaultValue(),"DefaultValue");
+            assertEquals(textField.getDefaultValue(),
+                    ((COSString)textField.getCOSObject().getDictionaryObject(COSName.DV)).getString());
+            assertEquals(textField.getValue(), "DefaultValue");
+            assertEquals(textField.getDefaultAppearance(), "/Helv 12 Tf 0 g");
+            assertEquals(textField.getDefaultStyleString(),
+                    "font: Helvetica,sans-serif 12.0pt; text-align:left; color:#000000 ");
+            // do not test for the full content as this is a rather long xml string
+            assertEquals(textField.getRichTextValue().length(),338);
+            
+            // get a rich text field with a text stream for the value
+            textField = (PDTextField)form.getField("LongRichTextField");
+            assertNotNull(textField);
+            assertEquals(textField.getCOSObject().getDictionaryObject(
+                    COSName.V).getClass().getName(),
+                    "org.apache.pdfbox.cos.COSStream");
+            assertEquals(textField.getValue().length(),145396);
+            
+        }
+        finally
+        {
+            if( doc != null )
+            {
+                doc.close();
+            }
+        }
+    }
 }

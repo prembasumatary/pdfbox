@@ -37,7 +37,7 @@ public class CMapParser
     private static final String MARK_END_OF_DICTIONARY = ">>";
     private static final String MARK_END_OF_ARRAY = "]";
 
-    private byte[] tokenParserByteBuffer = new byte[512];
+    private final byte[] tokenParserByteBuffer = new byte[512];
 
     /**
      * Creates a new instance of CMapParser.
@@ -74,6 +74,7 @@ public class CMapParser
      * Parses a predefined CMap.
      *
      * @param name CMap name.
+     * @return The parsed predefined CMap as a java object.
      * @throws IOException If the CMap could not be parsed.
      */
     public CMap parsePredefined(String name) throws IOException
@@ -105,7 +106,7 @@ public class CMapParser
         PushbackInputStream cmapStream = new PushbackInputStream(input);
         CMap result = new CMap();
         Object previousToken = null;
-        Object token = null;
+        Object token;
         while ((token = parseNextToken(cmapStream)) != null)
         {
             if (token instanceof Operator)
@@ -113,10 +114,7 @@ public class CMapParser
                 Operator op = (Operator) token;
                 if (op.op.equals("usecmap"))
                 {
-                    LiteralName useCmapName = (LiteralName) previousToken;
-                    InputStream useStream = getExternalCMap(useCmapName.name);
-                    CMap useCMap = parse(useStream);
-                    result.useCmap(useCMap);
+                    parseUsecmap(previousToken, result);
                 }
                 else if (op.op.equals("endcmap"))
                 {
@@ -125,251 +123,283 @@ public class CMapParser
                 }
                 else if (op.op.equals("begincodespacerange"))
                 {
-                    Number cosCount = (Number) previousToken;
-                    for (int j = 0; j < cosCount.intValue(); j++)
-                    {
-                        Object nextToken = parseNextToken(cmapStream);
-                        if (nextToken instanceof Operator)
-                        {
-                            if (!((Operator) nextToken).op.equals("endcodespacerange"))
-                            {
-                                throw new IOException("Error : ~codespacerange contains an unexpected operator : "
-                                        + ((Operator) nextToken).op);
-                            }
-                            break;
-                        }
-                        byte[] startRange = (byte[]) nextToken;
-                        byte[] endRange = (byte[]) parseNextToken(cmapStream);
-                        CodespaceRange range = new CodespaceRange();
-                        range.setStart(startRange);
-                        range.setEnd(endRange);
-                        result.addCodespaceRange(range);
-                    }
+                    parseBegincodespacerange(previousToken, cmapStream, result);
                 }
                 else if (op.op.equals("beginbfchar"))
                 {
-                    Number cosCount = (Number) previousToken;
-                    for (int j = 0; j < cosCount.intValue(); j++)
-                    {
-                        Object nextToken = parseNextToken(cmapStream);
-                        if (nextToken instanceof Operator)
-                        {
-                            if (!((Operator) nextToken).op.equals("endbfchar"))
-                            {
-                                throw new IOException("Error : ~bfchar contains an unexpected operator : "
-                                        + ((Operator) nextToken).op);
-                            }
-                            break;
-                        }
-                        byte[] inputCode = (byte[]) nextToken;
-                        nextToken = parseNextToken(cmapStream);
-                        if (nextToken instanceof byte[])
-                        {
-                            byte[] bytes = (byte[]) nextToken;
-                            String value = createStringFromBytes(bytes);
-                            result.addCharMapping(inputCode, value);
-                        }
-                        else if (nextToken instanceof LiteralName)
-                        {
-                            result.addCharMapping(inputCode, ((LiteralName) nextToken).name);
-                        }
-                        else
-                        {
-                            throw new IOException("Error parsing CMap beginbfchar, expected{COSString "
-                                    + "or COSName} and not " + nextToken);
-                        }
-                    }
+                    parseBeginbfchar(previousToken, cmapStream, result);
                 }
                 else if (op.op.equals("beginbfrange"))
                 {
-                    Number cosCount = (Number) previousToken;
-
-                    for (int j = 0; j < cosCount.intValue(); j++)
-                    {
-                        Object nextToken = parseNextToken(cmapStream);
-                        if (nextToken instanceof Operator)
-                        {
-                            if (!((Operator) nextToken).op.equals("endbfrange"))
-                            {
-                                throw new IOException("Error : ~bfrange contains an unexpected operator : "
-                                        + ((Operator) nextToken).op);
-                            }
-                            break;
-                        }
-                        byte[] startCode = (byte[]) nextToken;
-                        byte[] endCode = (byte[]) parseNextToken(cmapStream);
-                        nextToken = parseNextToken(cmapStream);
-                        List<byte[]> array = null;
-                        byte[] tokenBytes = null;
-                        if (nextToken instanceof List<?>)
-                        {
-                            array = (List<byte[]>) nextToken;
-                            tokenBytes = array.get(0);
-                        }
-                        else
-                        {
-                            tokenBytes = (byte[]) nextToken;
-                        }
-                        boolean done = false;
-                        // don't add 1:1 mappings to reduce the memory footprint
-                        /*if (Arrays.equals(startCode, tokenBytes))
-                        {
-                            done = true;
-                        }*/
-                        String value = null;
-
-                        int arrayIndex = 0;
-                        while (!done)
-                        {
-                            if (compare(startCode, endCode) >= 0)
-                            {
-                                done = true;
-                            }
-                            value = createStringFromBytes(tokenBytes);
-                            result.addCharMapping(startCode, value);
-                            increment(startCode);
-
-                            if (array == null)
-                            {
-                                increment(tokenBytes);
-                            }
-                            else
-                            {
-                                arrayIndex++;
-                                if (arrayIndex < array.size())
-                                {
-                                    tokenBytes = (byte[]) array.get(arrayIndex);
-                                }
-                            }
-                        }
-                    }
+                    parseBeginbfrange(previousToken, cmapStream, result);
                 }
                 else if (op.op.equals("begincidchar"))
                 {
-                    Number cosCount = (Number) previousToken;
-                    for (int j = 0; j < cosCount.intValue(); j++)
-                    {
-                        Object nextToken = parseNextToken(cmapStream);
-                        if (nextToken instanceof Operator)
-                        {
-                            if (!((Operator) nextToken).op.equals("endcidchar"))
-                            {
-                                throw new IOException("Error : ~cidchar contains an unexpected operator : "
-                                        + ((Operator) nextToken).op);
-                            }
-                            break;
-                        }
-                        byte[] inputCode = (byte[]) nextToken;
-                        int mappedCode = (Integer) parseNextToken(cmapStream);
-                        int mappedCID = createIntFromBytes(inputCode);
-                        result.addCIDMapping(mappedCode, mappedCID);
-                    }
+                    parseBegincidchar(previousToken, cmapStream, result);
                 }
                 else if (op.op.equals("begincidrange"))
                 {
-                    int numberOfLines = (Integer) previousToken;
-                    for (int n = 0; n < numberOfLines; n++)
-                    {
-                        Object nextToken = parseNextToken(cmapStream);
-                        if (nextToken instanceof Operator)
-                        {
-                            if (!((Operator) nextToken).op.equals("endcidrange"))
-                            {
-                                throw new IOException("Error : ~cidrange contains an unexpected operator : "
-                                        + ((Operator) nextToken).op);
-                            }
-                            break;
-                        }
-                        byte[] startCode = (byte[]) nextToken;
-                        int start = createIntFromBytes(startCode);
-                        byte[] endCode = (byte[]) parseNextToken(cmapStream);
-                        int end = createIntFromBytes(endCode);
-                        int mappedCode = (Integer) parseNextToken(cmapStream);
-                        if (startCode.length <= 2 && endCode.length <= 2)
-                        {
-                            result.addCIDRange((char) start, (char) end, mappedCode);
-                        }
-                        else
-                        {
-                            // TODO Is this even possible?
-                            int endOfMappings = mappedCode + end - start;
-                            while (mappedCode <= endOfMappings)
-                            {
-                                int mappedCID = createIntFromBytes(startCode);
-                                result.addCIDMapping(mappedCode++, mappedCID);
-                                increment(startCode);
-                            }
-                        }
-                    }
+                    parseBegincidrange(previousToken, cmapStream, result);
                 }
             }
             else if (token instanceof LiteralName)
             {
-                LiteralName literal = (LiteralName) token;
-                if ("WMode".equals(literal.name))
-                {
-                    Object next = parseNextToken(cmapStream);
-                    if (next instanceof Integer)
-                    {
-                        result.setWMode((Integer) next);
-                    }
-                }
-                else if ("CMapName".equals(literal.name))
-                {
-                    Object next = parseNextToken(cmapStream);
-                    if (next instanceof LiteralName)
-                    {
-                        result.setName(((LiteralName) next).name);
-                    }
-                }
-                else if ("CMapVersion".equals(literal.name))
-                {
-                    Object next = parseNextToken(cmapStream);
-                    if (next instanceof Number)
-                    {
-                        result.setVersion(((Number) next).toString());
-                    }
-                    else if (next instanceof String)
-                    {
-                        result.setVersion((String) next);
-                    }
-                }
-                else if ("CMapType".equals(literal.name))
-                {
-                    Object next = parseNextToken(cmapStream);
-                    if (next instanceof Integer)
-                    {
-                        result.setType((Integer) next);
-                    }
-                }
-                else if ("Registry".equals(literal.name))
-                {
-                    Object next = parseNextToken(cmapStream);
-                    if (next instanceof String)
-                    {
-                        result.setRegistry((String) next);
-                    }
-                }
-                else if ("Ordering".equals(literal.name))
-                {
-                    Object next = parseNextToken(cmapStream);
-                    if (next instanceof String)
-                    {
-                        result.setOrdering((String) next);
-                    }
-                }
-                else if ("Supplement".equals(literal.name))
-                {
-                    Object next = parseNextToken(cmapStream);
-                    if (next instanceof Integer)
-                    {
-                        result.setSupplement((Integer) next);
-                    }
-                }
+                parseLiteralName(token, cmapStream, result);
             }
             previousToken = token;
         }
         return result;
+    }
+
+    private void parseUsecmap(Object previousToken, CMap result) throws IOException
+    {
+        LiteralName useCmapName = (LiteralName) previousToken;
+        InputStream useStream = getExternalCMap(useCmapName.name);
+        CMap useCMap = parse(useStream);
+        result.useCmap(useCMap);
+    }
+
+    private void parseLiteralName(Object token, PushbackInputStream cmapStream, CMap result) throws IOException
+    {
+        LiteralName literal = (LiteralName) token;
+        if ("WMode".equals(literal.name))
+        {
+            Object next = parseNextToken(cmapStream);
+            if (next instanceof Integer)
+            {
+                result.setWMode((Integer) next);
+            }
+        }
+        else if ("CMapName".equals(literal.name))
+        {
+            Object next = parseNextToken(cmapStream);
+            if (next instanceof LiteralName)
+            {
+                result.setName(((LiteralName) next).name);
+            }
+        }
+        else if ("CMapVersion".equals(literal.name))
+        {
+            Object next = parseNextToken(cmapStream);
+            if (next instanceof Number)
+            {
+                result.setVersion(next.toString());
+            }
+            else if (next instanceof String)
+            {
+                result.setVersion((String) next);
+            }
+        }
+        else if ("CMapType".equals(literal.name))
+        {
+            Object next = parseNextToken(cmapStream);
+            if (next instanceof Integer)
+            {
+                result.setType((Integer) next);
+            }
+        }
+        else if ("Registry".equals(literal.name))
+        {
+            Object next = parseNextToken(cmapStream);
+            if (next instanceof String)
+            {
+                result.setRegistry((String) next);
+            }
+        }
+        else if ("Ordering".equals(literal.name))
+        {
+            Object next = parseNextToken(cmapStream);
+            if (next instanceof String)
+            {
+                result.setOrdering((String) next);
+            }
+        }
+        else if ("Supplement".equals(literal.name))
+        {
+            Object next = parseNextToken(cmapStream);
+            if (next instanceof Integer)
+            {
+                result.setSupplement((Integer) next);
+            }
+        }
+    }
+
+    private void parseBegincodespacerange(Object previousToken, PushbackInputStream cmapStream, CMap result) throws IOException
+    {
+        Number cosCount = (Number) previousToken;
+        for (int j = 0; j < cosCount.intValue(); j++)
+        {
+            Object nextToken = parseNextToken(cmapStream);
+            if (nextToken instanceof Operator)
+            {
+                if (!((Operator) nextToken).op.equals("endcodespacerange"))
+                {
+                    throw new IOException("Error : ~codespacerange contains an unexpected operator : "
+                            + ((Operator) nextToken).op);
+                }
+                break;
+            }
+            byte[] startRange = (byte[]) nextToken;
+            byte[] endRange = (byte[]) parseNextToken(cmapStream);
+            CodespaceRange range = new CodespaceRange();
+            range.setStart(startRange);
+            range.setEnd(endRange);
+            result.addCodespaceRange(range);
+        }
+    }
+
+    private void parseBeginbfchar(Object previousToken, PushbackInputStream cmapStream, CMap result) throws IOException
+    {
+        Number cosCount = (Number) previousToken;
+        for (int j = 0; j < cosCount.intValue(); j++)
+        {
+            Object nextToken = parseNextToken(cmapStream);
+            if (nextToken instanceof Operator)
+            {
+                if (!((Operator) nextToken).op.equals("endbfchar"))
+                {
+                    throw new IOException("Error : ~bfchar contains an unexpected operator : "
+                            + ((Operator) nextToken).op);
+                }
+                break;
+            }
+            byte[] inputCode = (byte[]) nextToken;
+            nextToken = parseNextToken(cmapStream);
+            if (nextToken instanceof byte[])
+            {
+                byte[] bytes = (byte[]) nextToken;
+                String value = createStringFromBytes(bytes);
+                result.addCharMapping(inputCode, value);
+            }
+            else if (nextToken instanceof LiteralName)
+            {
+                result.addCharMapping(inputCode, ((LiteralName) nextToken).name);
+            }
+            else
+            {
+                throw new IOException("Error parsing CMap beginbfchar, expected{COSString "
+                        + "or COSName} and not " + nextToken);
+            }
+        }
+    }
+
+    private void parseBegincidrange(Object previousToken, PushbackInputStream cmapStream, CMap result) throws IOException
+    {
+        int numberOfLines = (Integer) previousToken;
+        for (int n = 0; n < numberOfLines; n++)
+        {
+            Object nextToken = parseNextToken(cmapStream);
+            if (nextToken instanceof Operator)
+            {
+                if (!((Operator) nextToken).op.equals("endcidrange"))
+                {
+                    throw new IOException("Error : ~cidrange contains an unexpected operator : "
+                            + ((Operator) nextToken).op);
+                }
+                break;
+            }
+            byte[] startCode = (byte[]) nextToken;
+            int start = createIntFromBytes(startCode);
+            byte[] endCode = (byte[]) parseNextToken(cmapStream);
+            int end = createIntFromBytes(endCode);
+            int mappedCode = (Integer) parseNextToken(cmapStream);
+            if (startCode.length <= 2 && endCode.length <= 2)
+            {
+                result.addCIDRange((char) start, (char) end, mappedCode);
+            }
+            else
+            {
+                // TODO Is this even possible?
+                int endOfMappings = mappedCode + end - start;
+                while (mappedCode <= endOfMappings)
+                {
+                    int mappedCID = createIntFromBytes(startCode);
+                    result.addCIDMapping(mappedCode++, mappedCID);
+                    increment(startCode);
+                }
+            }
+        }
+    }
+
+    private void parseBegincidchar(Object previousToken, PushbackInputStream cmapStream, CMap result) throws IOException
+    {
+        Number cosCount = (Number) previousToken;
+        for (int j = 0; j < cosCount.intValue(); j++)
+        {
+            Object nextToken = parseNextToken(cmapStream);
+            if (nextToken instanceof Operator)
+            {
+                if (!((Operator) nextToken).op.equals("endcidchar"))
+                {
+                    throw new IOException("Error : ~cidchar contains an unexpected operator : "
+                            + ((Operator) nextToken).op);
+                }
+                break;
+            }
+            byte[] inputCode = (byte[]) nextToken;
+            int mappedCode = (Integer) parseNextToken(cmapStream);
+            int mappedCID = createIntFromBytes(inputCode);
+            result.addCIDMapping(mappedCode, mappedCID);
+        }
+    }
+
+    private void parseBeginbfrange(Object previousToken, PushbackInputStream cmapStream, CMap result) throws IOException
+    {
+        Number cosCount = (Number) previousToken;
+
+        for (int j = 0; j < cosCount.intValue(); j++)
+        {
+            Object nextToken = parseNextToken(cmapStream);
+            if (nextToken instanceof Operator)
+            {
+                if (!((Operator) nextToken).op.equals("endbfrange"))
+                {
+                    throw new IOException("Error : ~bfrange contains an unexpected operator : "
+                            + ((Operator) nextToken).op);
+                }
+                break;
+            }
+            byte[] startCode = (byte[]) nextToken;
+            byte[] endCode = (byte[]) parseNextToken(cmapStream);
+            nextToken = parseNextToken(cmapStream);
+            List<byte[]> array = null;
+            byte[] tokenBytes;
+            if (nextToken instanceof List<?>)
+            {
+                array = (List<byte[]>) nextToken;
+                tokenBytes = array.get(0);
+            }
+            else
+            {
+                tokenBytes = (byte[]) nextToken;
+            }
+            boolean done = false;
+
+            int arrayIndex = 0;
+            while (!done)
+            {
+                if (compare(startCode, endCode) >= 0)
+                {
+                    done = true;
+                }
+                String value = createStringFromBytes(tokenBytes);
+                result.addCharMapping(startCode, value);
+                increment(startCode);
+
+                if (array == null)
+                {
+                    increment(tokenBytes);
+                }
+                else
+                {
+                    arrayIndex++;
+                    if (arrayIndex < array.size())
+                    {
+                        tokenBytes = array.get(arrayIndex);
+                    }
+                }
+            }
+        }
     }
 
     /**
@@ -442,7 +472,7 @@ public class CMapParser
             List<Object> list = new ArrayList<Object>();
 
             Object nextToken = parseNextToken(is);
-            while (nextToken != null && nextToken != MARK_END_OF_ARRAY)
+            while (nextToken != null && !MARK_END_OF_ARRAY.equals(nextToken))
             {
                 list.add(nextToken);
                 nextToken = parseNextToken(is);
@@ -458,7 +488,7 @@ public class CMapParser
                 Map<String, Object> result = new HashMap<String, Object>();
                 // we are reading a dictionary
                 Object key = parseNextToken(is);
-                while (key instanceof LiteralName && key != MARK_END_OF_DICTIONARY)
+                while (key instanceof LiteralName && !MARK_END_OF_DICTIONARY.equals(key))
                 {
                     Object value = parseNextToken(is);
                     result.put(((LiteralName) key).name, value);
@@ -525,17 +555,21 @@ public class CMapParser
             StringBuffer buffer = new StringBuffer();
             int stringByte = is.read();
 
-            while (!isWhitespaceOrEOF(stringByte))
+            while (!isWhitespaceOrEOF(stringByte) && !isDelimiter(stringByte))
             {
                 buffer.append((char) stringByte);
                 stringByte = is.read();
+            }
+            if (isDelimiter( stringByte)) 
+            {
+                is.unread(stringByte);
             }
             retval = new LiteralName(buffer.toString());
             break;
         }
         case -1:
         {
-            // EOF return null;
+            // EOF returning null
             break;
         }
         case '0':
@@ -566,7 +600,7 @@ public class CMapParser
             }
             else
             {
-                retval = new Integer(value);
+                retval = Integer.valueOf(value);
             }
             break;
         }
@@ -578,12 +612,12 @@ public class CMapParser
 
             // newline separator may be missing in malformed CMap files
             // see PDFBOX-2035
-            while (!isWhitespaceOrEOF(nextByte) && nextByte != '<')
+            while (!isWhitespaceOrEOF(nextByte) && !isDelimiter(nextByte) && !Character.isDigit(nextByte))
             {
                 buffer.append((char) nextByte);
                 nextByte = is.read();
             }
-            if (nextByte == '<')
+            if (isDelimiter(nextByte) || Character.isDigit(nextByte))
             {
                 is.unread(nextByte);
             }
@@ -608,6 +642,27 @@ public class CMapParser
     private boolean isWhitespaceOrEOF(int aByte)
     {
         return aByte == -1 || aByte == 0x20 || aByte == 0x0D || aByte == 0x0A;
+    }
+
+    /** Is this a standard PDF delimiter character? */
+    private boolean isDelimiter(int aByte) 
+    {
+        switch (aByte) 
+        {
+            case '(':
+            case ')':
+            case '<':
+            case '>':
+            case '[':
+            case ']':
+            case '{':
+            case '}':
+            case '/':
+            case '%':
+                return true;
+            default:
+                return false;
+        }
     }
 
     private void increment(byte[] data)
@@ -641,7 +696,7 @@ public class CMapParser
 
     private String createStringFromBytes(byte[] bytes) throws IOException
     {
-        String retval = null;
+        String retval;
         if (bytes.length == 1)
         {
             retval = new String(bytes, "ISO-8859-1");
@@ -680,7 +735,7 @@ public class CMapParser
     /**
      * Internal class.
      */
-    private class LiteralName
+    private final class LiteralName
     {
         private String name;
 
@@ -693,7 +748,7 @@ public class CMapParser
     /**
      * Internal class.
      */
-    private class Operator
+    private final class Operator
     {
         private String op;
 

@@ -16,8 +16,8 @@
  */
 package org.apache.pdfbox.pdmodel.common;
 
+import java.awt.geom.GeneralPath;
 import java.awt.geom.Point2D;
-import java.awt.geom.Rectangle2D;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSFloat;
@@ -25,7 +25,6 @@ import org.apache.pdfbox.cos.COSNumber;
 
 import org.apache.fontbox.util.BoundingBox;
 
-import java.awt.Dimension;
 import org.apache.pdfbox.util.Matrix;
 
 /**
@@ -281,19 +280,28 @@ public class PDRectangle implements COSObjectable
     }
 
     /**
-     * Returns a copy of this rectangle which has been transformed using the given matrix.
+     * Returns a path which represents this rectangle having been transformed by the given matrix.
+     * Note that the resulting path need not be rectangular.
      */
-    public PDRectangle transform(Matrix matrix)
+    public GeneralPath transform(Matrix matrix)
     {
-        Point2D.Float lowerLeft = matrix.transformPoint(getLowerLeftX(), getLowerLeftY());
-        Point2D.Float upperRight = matrix.transformPoint(getUpperRightX(), getUpperRightY());
+        float x1 = getLowerLeftX();
+        float y1 = getLowerLeftY();
+        float x2 = getUpperRightX();
+        float y2 = getUpperRightY();
 
-        PDRectangle rect = new PDRectangle();
-        rect.setLowerLeftX(lowerLeft.x);
-        rect.setLowerLeftY(lowerLeft.y);
-        rect.setUpperRightX(upperRight.x);
-        rect.setUpperRightY(upperRight.y);
-        return rect;
+        Point2D.Float p0 = matrix.transformPoint(x1, y1);
+        Point2D.Float p1 = matrix.transformPoint(x2, y1);
+        Point2D.Float p2 = matrix.transformPoint(x2, y2);
+        Point2D.Float p3 = matrix.transformPoint(x1, y2);
+
+        GeneralPath path = new GeneralPath();
+        path.moveTo(p0.getX(), p0.getY());
+        path.lineTo(p1.getX(), p1.getY());
+        path.lineTo(p2.getX(), p2.getY());
+        path.lineTo(p3.getX(), p3.getY());
+        path.closePath();
+        return path;
     }
 
     /**
@@ -301,17 +309,29 @@ public class PDRectangle implements COSObjectable
      *
      * @return The cos object that matches this Java object.
      */
+    @Override
     public COSBase getCOSObject()
     {
         return rectArray;
     }
 
     /**
-     * Returns a new Rectangle2D which is equivalent to this PDRectangle.
+     * Returns a general path equivalent to this rectangle. This method avoids the problems
+     * caused by Rectangle2D not working well with -ve rectangles.
      */
-    public Rectangle2D toRectangle2D()
+    public GeneralPath toGeneralPath()
     {
-        return new Rectangle2D.Float(getLowerLeftX(), getLowerLeftY(), getWidth(), getHeight());
+        float x1 = getLowerLeftX();
+        float y1 = getLowerLeftY();
+        float x2 = getUpperRightX();
+        float y2 = getUpperRightY();
+        GeneralPath path = new GeneralPath();
+        path.moveTo(x1, y1);
+        path.lineTo(x2, y1);
+        path.lineTo(x2, y2);
+        path.lineTo(x1, y2);
+        path.closePath();
+        return path;
     }
 
     /**
@@ -319,6 +339,7 @@ public class PDRectangle implements COSObjectable
      *
      * @return This object as a string.
      */
+    @Override
     public String toString()
     {
         return "[" + getLowerLeftX() + "," + getLowerLeftY() + "," +

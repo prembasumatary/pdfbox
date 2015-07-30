@@ -16,6 +16,9 @@
  */
 package org.apache.pdfbox.tools.gui;
 
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
@@ -23,6 +26,7 @@ import java.awt.Graphics2D;
 import java.io.IOException;
 
 import javax.swing.JPanel;
+import javax.swing.SwingUtilities;
 
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -32,18 +36,15 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 /**
  * This is a simple JPanel that can be used to display a PDF page.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.4 $
+ * @author Ben Litchfield
  */
 public class PDFPagePanel extends JPanel
 {
     private static final long serialVersionUID = -4629033339560890669L;
 
     private PDFRenderer renderer;
-    private PDPage page;
     private int pageNum;
-    private Dimension pageDimension = null;
-    private Dimension drawDimension = null;
+    private final Cursor waitCursor = new Cursor(Cursor.WAIT_CURSOR);
 
     /**
      * This will set the page that should be displayed in this panel.
@@ -56,13 +57,13 @@ public class PDFPagePanel extends JPanel
     public void setPage(PDFRenderer renderer, PDPage page, int pageNum) throws IOException
     {
         this.renderer = renderer;
-        this.page = page;
         this.pageNum = pageNum;
 
         PDRectangle cropBox = page.getCropBox();
-        drawDimension = new Dimension((int)cropBox.getWidth(), (int)cropBox.getHeight());
-        int rotation = page.getRotation();
-        if (rotation == 90 || rotation == 270)
+        Dimension drawDimension = new Dimension((int) cropBox.getWidth(), (int) cropBox.getHeight());
+        Dimension pageDimension;
+        int rotationAngle = page.getRotation();
+        if (rotationAngle == 90 || rotationAngle == 270)
         {
             pageDimension = new Dimension(drawDimension.height, drawDimension.width);
         }
@@ -71,7 +72,7 @@ public class PDFPagePanel extends JPanel
             pageDimension = drawDimension;
         }
         setSize(pageDimension);
-        setBackground(java.awt.Color.white);
+        setBackground(Color.white);
     }
 
     /**
@@ -84,7 +85,14 @@ public class PDFPagePanel extends JPanel
         {
             g.setColor(getBackground());
             g.fillRect(0, 0, getWidth(), getHeight());
+            
+            Component rootComponent = SwingUtilities.getRoot(this);
+            Cursor cursor = rootComponent.getCursor();
+            rootComponent.setCursor(waitCursor);
+            
             renderer.renderPageToGraphics(pageNum, (Graphics2D) g);
+            
+            rootComponent.setCursor(cursor);
         }
         catch (IOException e)
         {

@@ -47,7 +47,7 @@ import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.cos.COSString;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.persistence.util.COSObjectKey;
+import org.apache.pdfbox.cos.COSObjectKey;
 import org.apache.pdfbox.preflight.PreflightConstants;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
@@ -57,6 +57,7 @@ import org.apache.pdfbox.preflight.utils.COSUtils;
 public class TrailerValidationProcess extends AbstractProcess
 {
 
+    @Override
     public void validate(PreflightContext ctx) throws ValidationException
     {
         PDDocument pdfDoc = ctx.getDocument();
@@ -71,8 +72,8 @@ public class TrailerValidationProcess extends AbstractProcess
             // and it must have the same ID than the last trailer.
             // According to the PDF version, trailers are available by the trailer key word (pdf <= 1.4)
             // or in the dictionary of the XRef stream ( PDF >= 1.5)
-            String pdfVersion = pdfDoc.getDocument().getHeaderString();
-            if (pdfVersion != null && pdfVersion.matches("%PDF-1\\.[1-4]"))
+            float pdfVersion = pdfDoc.getVersion();
+            if (pdfVersion <= 1.4f)
             {
                 checkTrailersForLinearizedPDF14(ctx);
             }
@@ -80,7 +81,6 @@ public class TrailerValidationProcess extends AbstractProcess
             {
                 checkTrailersForLinearizedPDF15(ctx);
             }
-
         }
         else
         {
@@ -90,20 +90,20 @@ public class TrailerValidationProcess extends AbstractProcess
     }
 
     /**
-     * Extracts and compares first and last trailers for PDF version between 1.1 and 1.4
+     * Extracts and compares first and last trailers for PDF version between 1.1 and 1.4.
      * 
      * @param ctx the preflight context.
      */
     protected void checkTrailersForLinearizedPDF14(PreflightContext ctx)
     {
-        COSDictionary first = ctx.getXrefTableResolver().getFirstTrailer();
+        COSDictionary first = ctx.getXrefTrailerResolver().getFirstTrailer();
         if (first == null)
         {
             addValidationError(ctx, new ValidationError(ERROR_SYNTAX_TRAILER, "There are no trailer in the PDF file"));
         }
         else
         {
-            COSDictionary last = ctx.getXrefTableResolver().getLastTrailer();
+            COSDictionary last = ctx.getXrefTrailerResolver().getLastTrailer();
             COSDocument cosDoc = new COSDocument();
             checkMainTrailer(ctx, first);
             if (!compareIds(first, last, cosDoc))
@@ -132,11 +132,9 @@ public class TrailerValidationProcess extends AbstractProcess
             {
                 // no XRef CosObject, may by this pdf file used the PDF 1.4 syntaxe
                 checkTrailersForLinearizedPDF14(ctx);
-
             }
             else
             {
-
                 long min = Long.MAX_VALUE;
                 long max = Long.MIN_VALUE;
                 COSDictionary firstTrailer = null;
@@ -171,7 +169,7 @@ public class TrailerValidationProcess extends AbstractProcess
         catch (IOException e)
         {
             addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_SYNTAX_TRAILER,
-                    "Unable to check PDF Trailers due to : " + e.getMessage()));
+                    "Unable to check PDF Trailers: " + e.getMessage(), e));
         }
     }
 
@@ -181,49 +179,58 @@ public class TrailerValidationProcess extends AbstractProcess
      * 
      * @param first the first dictionary for comparison.
      * @param last the last dictionary for comparison.
+     * @param cosDocument the document.
      * @return true if the IDs of the first and last dictionary are the same.
      */
     protected boolean compareIds(COSDictionary first, COSDictionary last, COSDocument cosDocument)
     {
         COSBase idFirst = first.getItem(COSName.getPDFName(TRAILER_DICTIONARY_KEY_ID));
         COSBase idLast = last.getItem(COSName.getPDFName(TRAILER_DICTIONARY_KEY_ID));
-
-        if (idFirst == null || idLast == null)
+        // According to the revised PDF/A specification the IDs have to be identical
+        // if both are present, otherwise everything is fine
+        if (idFirst != null && idLast != null)
         {
-            return false;
-        }
-
-        // ---- cast two COSBase to COSArray.
-        COSArray af = COSUtils.getAsArray(idFirst, cosDocument);
-        COSArray al = COSUtils.getAsArray(idLast, cosDocument);
-
-        // ---- if one COSArray is null, the PDF/A isn't valid
-        if ((af == null) || (al == null))
-        {
-            return false;
-        }
-
-        // ---- compare both arrays
-        boolean isEqual = true;
-        for (Object of : af.toList())
-        {
-            boolean oneIsEquals = false;
-            for (Object ol : al.toList())
+    
+            // ---- cast two COSBase to COSArray.
+            COSArray af = COSUtils.getAsArray(idFirst, cosDocument);
+            COSArray al = COSUtils.getAsArray(idLast, cosDocument);
+    
+            // ---- if one COSArray is null, the PDF/A isn't valid
+            if ((af == null) || (al == null))
             {
-                // ---- according to PDF Reference 1-4, ID is an array containing two
-                // strings
-                if (!oneIsEquals)
-                    oneIsEquals = ((COSString) ol).getString().equals(((COSString) of).getString());
-                else
+                return false;
+            }
+    
+            // ---- compare both arrays
+            boolean isEqual = true;
+            for (Object of : af.toList())
+            {
+                boolean oneIsEquals = false;
+                for (Object ol : al.toList())
+                {
+                    // ---- according to PDF Reference 1-4, ID is an array containing two
+                    // strings
+                    if (!oneIsEquals)
+                    {
+                        oneIsEquals = ((COSString) ol).getString().equals(((COSString) of).getString());
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+                isEqual = isEqual && oneIsEquals;
+                if (!isEqual)
+                {
                     break;
+                }
             }
-            isEqual = isEqual && oneIsEquals;
-            if (!isEqual)
-            {
-                break;
-            }
+            return isEqual;
         }
-        return isEqual;
+        else
+        {
+            return true;
+        }
     }
 
     /**
@@ -434,8 +441,6 @@ public class TrailerValidationProcess extends AbstractProcess
             addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_SYNTAX_DICT_INVALID,
                     "Invalid key in The Linearized dictionary"));
         }
-
-        return;
     }
 
 }

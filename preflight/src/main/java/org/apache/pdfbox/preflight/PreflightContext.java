@@ -41,48 +41,44 @@ public class PreflightContext implements Closeable
     /**
      * Contains the list of font name embedded in the PDF document.
      */
-    protected Map<COSBase, FontContainer> fontContainers = new HashMap<COSBase, FontContainer>();
+    private final Map<COSBase, FontContainer> fontContainers = new HashMap<COSBase, FontContainer>();
 
     /**
      * The PDFbox object representation of the PDF source.
      */
-    protected PreflightDocument document = null;
+    private PreflightDocument document = null;
 
     /**
      * The datasource to load the document from
      */
-    protected DataSource source = null;
-    //
-    // /**
-    // * JavaCC Token Manager used to get some content of the PDF file as string (ex
-    // * : Trailers)
-    // */
-    // protected ExtractorTokenManager pdfExtractor = null;
+    private DataSource source = null;
 
     /**
      * Contains all Xref/trailer objects and resolves them into single object using startxref reference.
      */
-    private XrefTrailerResolver xrefTableResolver;
+    private XrefTrailerResolver xrefTrailerResolver;
 
     /**
      * This wrapper contains the ICCProfile used by the PDF file.
      */
-    protected ICCProfileWrapper iccProfileWrapper = null;
+    private ICCProfileWrapper iccProfileWrapper = null;
 
     /**
      * 
      */
-    protected boolean iccProfileAlreadySearched = false;
+    private boolean iccProfileAlreadySearched = false;
 
     /**
      * MetaData of the current pdf file.
      */
-    protected XMPMetadata metadata = null;
+    private XMPMetadata metadata = null;
 
-    protected PreflightConfiguration config = null;
+    private PreflightConfiguration config = null;
 
-    protected PreflightPath validationPath = new PreflightPath();
+    private PreflightPath validationPath = new PreflightPath();
 
+    private Integer currentPageNumber = null;
+    
     /**
      * Create the DocumentHandler using the DataSource which represent the PDF file to check.
      * 
@@ -96,6 +92,7 @@ public class PreflightContext implements Closeable
     public PreflightContext(DataSource source, PreflightConfiguration configuration)
     {
         this.source = source;
+        this.config = configuration;
     }
 
     /**
@@ -115,22 +112,6 @@ public class PreflightContext implements Closeable
         this.metadata = metadata;
     }
 
-    // /**
-    // * @return the value of the pdfExtractor attribute.
-    // */
-    // public ExtractorTokenManager getPdfExtractor() {
-    // return pdfExtractor;
-    // }
-    //
-    // /**
-    // * Initialize the pdfExtractor attribute.
-    // *
-    // * @param pdfExtractor
-    // */
-    // public void setPdfExtractor(ExtractorTokenManager pdfExtractor) {
-    // this.pdfExtractor = pdfExtractor;
-    // }
-
     /**
      * @return the PDFBox object representation of the document
      */
@@ -139,14 +120,14 @@ public class PreflightContext implements Closeable
         return document;
     }
 
-    public XrefTrailerResolver getXrefTableResolver()
+    public XrefTrailerResolver getXrefTrailerResolver()
     {
-        return xrefTableResolver;
+        return xrefTrailerResolver;
     }
 
-    public void setXrefTableResolver(XrefTrailerResolver xrefTableResolver)
+    public void setXrefTrailerResolver(XrefTrailerResolver xrefTrailerResolver)
     {
-        this.xrefTableResolver = xrefTableResolver;
+        this.xrefTrailerResolver = xrefTrailerResolver;
     }
 
     /**
@@ -226,6 +207,7 @@ public class PreflightContext implements Closeable
     /**
      * Close all opened resources
      */
+    @Override
     public void close()
     {
         COSUtils.closeDocumentQuietly(document);
@@ -238,8 +220,9 @@ public class PreflightContext implements Closeable
      */
     public void addValidationError(ValidationError error)
     {
-        PreflightDocument document = (PreflightDocument) this.document;
-        document.addValidationError(error);
+        PreflightDocument pfDoc = this.document;
+        error.setPageNumber(currentPageNumber);
+        pfDoc.addValidationError(error);
     }
 
     /**
@@ -249,10 +232,10 @@ public class PreflightContext implements Closeable
      */
     public void addValidationErrors(List<ValidationError> errors)
     {
-        PreflightDocument document = (PreflightDocument) this.document;
+        PreflightDocument pfDoc = this.document;
         for (ValidationError error : errors)
         {
-            document.addValidationError(error);
+            pfDoc.addValidationError(error);
         }
     }
 
@@ -274,6 +257,24 @@ public class PreflightContext implements Closeable
     public void setIccProfileAlreadySearched(boolean iccProfileAlreadySearched)
     {
         this.iccProfileAlreadySearched = iccProfileAlreadySearched;
+    }
+
+    /**
+     * Sets or resets the current page number.
+     *
+     * @param currentPageNumber zero based page number or null if none is known.
+     */
+    public void setCurrentPageNumber(Integer currentPageNumber)
+    {
+        this.currentPageNumber = currentPageNumber;
+    }
+
+    /**
+     * Returns the current page number or null if none is known.
+     */
+    public Integer getCurrentPageNumber()
+    {
+        return currentPageNumber;
     }
 
 }

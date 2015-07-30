@@ -21,11 +21,14 @@
 
 package org.apache.pdfbox.preflight.metadata;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Iterator;
 import java.util.List;
+import java.util.regex.Pattern;
+import org.apache.pdfbox.cos.COSBase;
+import org.apache.pdfbox.cos.COSName;
+import org.apache.pdfbox.cos.COSString;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentInformation;
@@ -41,7 +44,7 @@ import org.apache.xmpbox.type.AbstractField;
 import org.apache.xmpbox.type.TextType;
 
 /**
- * Class which check if document information available in a document are synchronized with XMP
+ * Class which checks if document information available in a document is synchronized with XMP
  * 
  * @author Germain Costenobel
  * 
@@ -61,10 +64,11 @@ public class SynchronizedMetaDataValidation
         String title = dico.getTitle();
         if (title != null)
         {
+            // automatically strip trailing Nul values
+            title = removeTrailingNul(title);
             if (dc != null)
             {
-                // Check the x-default value, if not found, check with the first value
-                // found
+                // Check the x-default value, if not found, check with the first value found
                 if (dc.getTitle() != null)
                 {
                     if (dc.getTitle("x-default") != null)
@@ -93,57 +97,56 @@ public class SynchronizedMetaDataValidation
                             }
                             else
                             {
-                                ve.add(AbsentXMPPropertyError("Title", "Property is badly defined"));
+                                ve.add(absentXMPPropertyError("Title", "Property is badly defined"));
                             }
                         }
                         else
                         {
-                            ve.add(AbsentXMPPropertyError("Title", "Property is not defined"));
+                            ve.add(absentXMPPropertyError("Title", "Property is not defined"));
                         }
                     }
-
                 }
                 else
                 {
-                    ve.add(AbsentXMPPropertyError("Title", "Property is not defined"));
+                    ve.add(absentXMPPropertyError("Title", "Property is not defined"));
                 }
             }
             else
             {
-                ve.add(AbsentSchemaMetaDataError("Title", "Dublin Core"));
+                ve.add(absentSchemaMetaDataError("Title", "Dublin Core"));
             }
         }
     }
 
     /**
-     * Analyze if Author(s) embedded in Document Information dictionary and in XMP properties are synchronized
-     * 
-     * @param dico
-     *            Document Information Dictionary
-     * @param dc
-     *            Dublin Core Schema
-     * @param ve
-     *            The list of validation errors
+     * Analyze if Author(s) embedded in Document Information dictionary and in XMP properties are
+     * synchronized
+     *
+     * @param dico Document Information Dictionary
+     * @param dc Dublin Core Schema
+     * @param ve The list of validation errors
      */
     protected void analyzeAuthorProperty(PDDocumentInformation dico, DublinCoreSchema dc, List<ValidationError> ve)
     {
         String author = dico.getAuthor();
         if (author != null)
         {
+            // automatically strip trailing Nul values
+            author = removeTrailingNul(author);
             if (dc != null)
             {
                 if (dc.getCreatorsProperty() != null)
                 {
                     if (dc.getCreators().size() != 1)
                     {
-                        ve.add(AbsentXMPPropertyError("Author",
+                        ve.add(absentXMPPropertyError("Author",
                                 "In XMP metadata, Author(s) must be represented by a single entry in a text array (dc:creator) "));
                     }
                     else
                     {
                         if (dc.getCreators().get(0) == null)
                         {
-                            ve.add(AbsentXMPPropertyError("Author", "Property is defined as null"));
+                            ve.add(absentXMPPropertyError("Author", "Property is defined as null"));
                         }
                         else
                         {
@@ -156,31 +159,31 @@ public class SynchronizedMetaDataValidation
                 }
                 else
                 {
-                    ve.add(AbsentXMPPropertyError("Author", "Property is not defined in XMP Metadata"));
+                    ve.add(absentXMPPropertyError("Author", "Property is not defined in XMP Metadata"));
                 }
             }
             else
             {
-                ve.add(AbsentSchemaMetaDataError("Author", "Dublin Core"));
+                ve.add(absentSchemaMetaDataError("Author", "Dublin Core"));
             }
         }
     }
 
     /**
-     * Analyze if Subject(s) embedded in Document Information dictionary and in XMP properties are synchronized
-     * 
-     * @param dico
-     *            Document Information Dictionary
-     * @param dc
-     *            Dublin Core Schema
-     * @param ve
-     *            The list of validation errors
+     * Analyze if Subject(s) embedded in Document Information dictionary and in XMP properties are
+     * synchronized
+     *
+     * @param dico Document Information Dictionary
+     * @param dc Dublin Core Schema
+     * @param ve The list of validation errors
      */
     protected void analyzeSubjectProperty(PDDocumentInformation dico, DublinCoreSchema dc, List<ValidationError> ve)
     {
         String subject = dico.getSubject();
         if (subject != null)
         {
+            // automatically strip trailing Nul values
+            subject = removeTrailingNul(subject);
             if (dc != null)
             {
                 // PDF/A Conformance Erratum (2007) specifies XMP Subject
@@ -189,7 +192,7 @@ public class SynchronizedMetaDataValidation
                 {
                     if (dc.getDescription("x-default") == null)
                     {
-                        ve.add(AbsentXMPPropertyError("Subject",
+                        ve.add(absentXMPPropertyError("Subject",
                                 "Subject not found in XMP (dc:description[\"x-default\"] not found)"));
                     }
                     else
@@ -203,36 +206,36 @@ public class SynchronizedMetaDataValidation
                 }
                 else
                 {
-                    ve.add(AbsentXMPPropertyError("Subject", "Property is defined as null"));
+                    ve.add(absentXMPPropertyError("Subject", "Property is defined as null"));
                 }
             }
             else
             {
-                ve.add(AbsentSchemaMetaDataError("Subject", "Dublin Core"));
+                ve.add(absentSchemaMetaDataError("Subject", "Dublin Core"));
             }
         }
     }
 
     /**
-     * Analyze if Keyword(s) embedded in Document Information dictionary and in XMP properties are synchronized
-     * 
-     * @param dico
-     *            Document Information Dictionary
-     * @param pdf
-     *            PDF Schema
-     * @param ve
-     *            The list of validation errors
+     * Analyze if Keyword(s) embedded in Document Information dictionary and in XMP properties are
+     * synchronized
+     *
+     * @param dico Document Information Dictionary
+     * @param pdf PDF Schema
+     * @param ve The list of validation errors
      */
     protected void analyzeKeywordsProperty(PDDocumentInformation dico, AdobePDFSchema pdf, List<ValidationError> ve)
     {
         String keyword = dico.getKeywords();
         if (keyword != null)
         {
+            // automatically strip trailing Nul values
+            keyword = removeTrailingNul(keyword);
             if (pdf != null)
             {
                 if (pdf.getKeywordsProperty() == null)
                 {
-                    ve.add(AbsentXMPPropertyError("Keywords", "Property is not defined"));
+                    ve.add(absentXMPPropertyError("Keywords", "Property is not defined"));
                 }
                 else
                 {
@@ -244,31 +247,31 @@ public class SynchronizedMetaDataValidation
             }
             else
             {
-                ve.add(AbsentSchemaMetaDataError("Keywords", "PDF"));
+                ve.add(absentSchemaMetaDataError("Keywords", "PDF"));
             }
         }
     }
 
     /**
-     * Analyze if Producer embedded in Document Information dictionary and in XMP properties are synchronized
-     * 
-     * @param dico
-     *            Document Information Dictionary
-     * @param pdf
-     *            PDF Schema
-     * @param ve
-     *            The list of validation errors
+     * Analyze if Producer embedded in Document Information dictionary and in XMP properties are
+     * synchronized
+     *
+     * @param dico Document Information Dictionary
+     * @param pdf PDF Schema
+     * @param ve The list of validation errors
      */
     protected void analyzeProducerProperty(PDDocumentInformation dico, AdobePDFSchema pdf, List<ValidationError> ve)
     {
         String producer = dico.getProducer();
         if (producer != null)
         {
+            // automatically strip trailing Nul values
+            producer = removeTrailingNul(producer);
             if (pdf != null)
             {
                 if (pdf.getProducerProperty() == null)
                 {
-                    ve.add(AbsentXMPPropertyError("Producer", "Property is not defined"));
+                    ve.add(absentXMPPropertyError("Producer", "Property is not defined"));
                 }
                 else
                 {
@@ -280,33 +283,33 @@ public class SynchronizedMetaDataValidation
             }
             else
             {
-                ve.add(AbsentSchemaMetaDataError("Producer", "PDF"));
+                ve.add(absentSchemaMetaDataError("Producer", "PDF"));
             }
         }
 
     }
 
     /**
-     * Analyze if the creator tool embedded in Document Information dictionary and in XMP properties are synchronized
-     * 
-     * @param dico
-     *            Document Information Dictionary
-     * @param xmp
-     *            XMP Basic Schema
-     * @param ve
-     *            The list of validation errors
-     * 
+     * Analyze if the creator tool embedded in Document Information dictionary and in XMP properties
+     * are synchronized
+     *
+     * @param dico Document Information Dictionary
+     * @param xmp XMP Basic Schema
+     * @param ve The list of validation errors
+     *
      */
     protected void analyzeCreatorToolProperty(PDDocumentInformation dico, XMPBasicSchema xmp, List<ValidationError> ve)
     {
         String creatorTool = dico.getCreator();
         if (creatorTool != null)
         {
+            // automatically strip trailing Nul values
+            creatorTool = removeTrailingNul(creatorTool);
             if (xmp != null)
             {
                 if (xmp.getCreatorToolProperty() == null)
                 {
-                    ve.add(AbsentXMPPropertyError("CreatorTool", "Property is not defined"));
+                    ve.add(absentXMPPropertyError("CreatorTool", "Property is not defined"));
                 }
                 else
                 {
@@ -318,37 +321,26 @@ public class SynchronizedMetaDataValidation
             }
             else
             {
-                ve.add(AbsentSchemaMetaDataError("CreatorTool", "PDF"));
+                ve.add(absentSchemaMetaDataError("CreatorTool", "PDF"));
             }
         }
-
     }
 
     /**
-     * Analyze if the CreationDate embedded in Document Information dictionary and in XMP properties are synchronized
-     * 
-     * @param dico
-     *            Document Information Dictionary
-     * @param xmp
-     *            XMP Basic Schema
-     * @param ve
-     *            The list of validation errors
+     * Analyze if the CreationDate embedded in Document Information dictionary and in XMP properties
+     * are synchronized
+     *
+     * @param dico Document Information Dictionary
+     * @param xmp XMP Basic Schema
+     * @param ve The list of validation errors
      * @throws ValidationException
      */
     protected void analyzeCreationDateProperty(PDDocumentInformation dico, XMPBasicSchema xmp, List<ValidationError> ve)
             throws ValidationException
     {
-        Calendar creationDate = null;
-        try
-        {
-            creationDate = dico.getCreationDate();
-        }
-        catch (IOException e)
-        {
-            // If there is an error while converting this property to a date
-            ve.add(new ValidationError(PreflightConstants.ERROR_METADATA_DICT_INFO_CORRUPT, "Document Information 'CreationDate' can't be read : " + e.getMessage()));
-        }
-        if (creationDate != null)
+        Calendar creationDate = dico.getCreationDate();
+        COSBase item = dico.getCOSObject().getItem(COSName.CREATION_DATE);
+        if (creationDate != null && isValidPDFDateFormat(item))
         {
             if (xmp != null)
             {
@@ -356,7 +348,7 @@ public class SynchronizedMetaDataValidation
 
                 if (xmpCreationDate == null)
                 {
-                    ve.add(AbsentXMPPropertyError("CreationDate", "Property is not defined"));
+                    ve.add(absentXMPPropertyError("CreationDate", "Property is not defined"));
                 }
                 else
                 {
@@ -364,75 +356,68 @@ public class SynchronizedMetaDataValidation
                     {
                         ve.add(unsynchronizedMetaDataError("CreationDate"));
                     }
+                    else if (hasTimeZone(xmp.getCreateDateProperty().getRawValue()) != 
+                            hasTimeZone(dico.getPropertyStringValue("CreationDate")))
+                    {
+                        ve.add(unsynchronizedMetaDataError("CreationDate"));
+                    }
                 }
-
             }
             else
             {
-                ve.add(AbsentSchemaMetaDataError("CreationDate", "Basic XMP"));
+                ve.add(absentSchemaMetaDataError("CreationDate", "Basic XMP"));
             }
         }
     }
 
     /**
-     * Analyze if the ModifyDate embedded in Document Information dictionary and in XMP properties are synchronized
-     * 
-     * @param dico
-     *            Document Information Dictionary
-     * @param xmp
-     *            XMP Basic Schema
-     * @param ve
-     *            The list of validation errors
+     * Analyze if the ModifyDate embedded in Document Information dictionary and in XMP properties
+     * are synchronized
+     *
+     * @param dico Document Information Dictionary
+     * @param xmp XMP Basic Schema
+     * @param ve The list of validation errors
      * @throws ValidationException
      */
     protected void analyzeModifyDateProperty(PDDocumentInformation dico, XMPBasicSchema xmp, List<ValidationError> ve)
             throws ValidationException
     {
-        Calendar modifyDate;
-        try
+        Calendar modifyDate = dico.getModificationDate();
+        COSBase item = dico.getCOSObject().getItem(COSName.MOD_DATE);        
+        if (modifyDate != null && isValidPDFDateFormat(item))
         {
-            modifyDate = dico.getModificationDate();
-            if (modifyDate != null)
+            if (xmp != null)
             {
-                if (xmp != null)
+                Calendar xmpModifyDate = xmp.getModifyDate();
+                if (xmpModifyDate == null)
                 {
-
-                    Calendar xmpModifyDate = xmp.getModifyDate();
-                    if (xmpModifyDate == null)
-                    {
-                        ve.add(AbsentXMPPropertyError("ModifyDate", "Property is not defined"));
-                    }
-                    else
-                    {
-                        if (!DateConverter.toISO8601(xmpModifyDate).equals(DateConverter.toISO8601(modifyDate)))
-                        {
-
-                            ve.add(unsynchronizedMetaDataError("ModificationDate"));
-                        }
-                    }
-
+                    ve.add(absentXMPPropertyError("ModifyDate", "Property is not defined"));
                 }
                 else
                 {
-                    ve.add(AbsentSchemaMetaDataError("ModifyDate", "Basic XMP"));
+                    if (!DateConverter.toISO8601(xmpModifyDate).equals(DateConverter.toISO8601(modifyDate)))
+                    {
+                        ve.add(unsynchronizedMetaDataError("ModificationDate"));
+                    }
+                    else if (hasTimeZone(xmp.getModifyDateProperty().getRawValue())
+                            != hasTimeZone(dico.getPropertyStringValue("ModDate")))
+                    {
+                        ve.add(unsynchronizedMetaDataError("ModificationDate"));
+                    }
                 }
             }
+            else
+            {
+                ve.add(absentSchemaMetaDataError("ModifyDate", "Basic XMP"));
+            }
         }
-        catch (IOException e)
-        {
-            // If there is an error while converting this property to a date
-            ve.add(new ValidationError(PreflightConstants.ERROR_METADATA_DICT_INFO_CORRUPT, "Document Information 'ModifyDate' can't be read : " + e.getMessage()));
-        }
-
     }
 
     /**
      * Check if document information entries and XMP information are synchronized
-     * 
-     * @param document
-     *            the PDF Document
-     * @param metadata
-     *            the XMP MetaData
+     *
+     * @param document the PDF Document
+     * @param metadata the XMP MetaData
      * @return List of validation errors
      * @throws ValidationException
      */
@@ -506,14 +491,12 @@ public class SynchronizedMetaDataValidation
 
     /**
      * Return an exception formatted on IOException when accessing on metadata schema
-     * 
-     * @param target
-     *            the name of the schema
-     * @param cause
-     *            the raised IOException
+     *
+     * @param target the name of the schema
+     * @param cause the raised IOException
      * @return the generated exception
      */
-    protected ValidationException SchemaAccessException(String target, Throwable cause)
+    protected ValidationException schemaAccessException(String target, Throwable cause)
     {
         StringBuilder sb = new StringBuilder(80);
         sb.append("Cannot access to the ").append(target).append(" schema");
@@ -522,9 +505,8 @@ public class SynchronizedMetaDataValidation
 
     /**
      * Return a formatted validation error when metadata are not synchronized
-     * 
-     * @param target
-     *            the concerned property
+     *
+     * @param target the concerned property
      * @return the generated validation error
      */
     protected ValidationError unsynchronizedMetaDataError(String target)
@@ -536,14 +518,12 @@ public class SynchronizedMetaDataValidation
 
     /**
      * Return a formatted validation error when a specific metadata schema can't be found
-     * 
-     * @param target
-     *            the concerned property
-     * @param schema
-     *            the XMP schema which can't be found
+     *
+     * @param target the concerned property
+     * @param schema the XMP schema which can't be found
      * @return the generated validation error
      */
-    protected ValidationError AbsentSchemaMetaDataError(String target, String schema)
+    protected ValidationError absentSchemaMetaDataError(String target, String schema)
     {
         StringBuilder sb = new StringBuilder(80);
         sb.append(target).append(" present in the document catalog dictionary can't be found in XMP information (")
@@ -553,18 +533,82 @@ public class SynchronizedMetaDataValidation
 
     /**
      * Return a formatted validation error when a specific XMP property can't be found
-     * 
-     * @param target
-     *            the concerned property
-     * @param details
-     *            comments about the XMP property
+     *
+     * @param target the concerned property
+     * @param details comments about the XMP property
      * @return the generated validation error
      */
-    protected ValidationError AbsentXMPPropertyError(String target, String details)
+    protected ValidationError absentXMPPropertyError(String target, String details)
     {
         StringBuilder sb = new StringBuilder(80);
         sb.append(target).append(" present in the document catalog dictionary can't be found in XMP information (")
                 .append(details).append(")");
         return new ValidationError(PreflightConstants.ERROR_METADATA_MISMATCH, sb.toString());
     }
+    
+    /**
+     * A given string from the DocumentInformation dictionary may have some trailing Nul values
+     * which have to be stripped.
+     *
+     * @param string to be stripped
+     * @return the stripped string
+     */
+    private String removeTrailingNul(String string)
+    {
+        // remove trailing NUL values
+        int length = string.length();
+        while (length > 0 && string.charAt(length - 1) == 0)
+        {
+            length--;
+        }
+        return string.substring(0, length);
+    }
+    
+    /**
+     * Verify if the date string has time zone information.
+     * <p>
+     * <strong>This method doesn't do a complete parsing as this is a helper AFTER a date has proven
+     * to be valid
+     * </strong>
+     * </p>
+     *
+     * @param date
+     * @return the validation result
+     */
+    private boolean hasTimeZone(Object date)
+    {
+        final String datePattern = "^D:.*[Z]$|^D:.*[+-].*|^\\d{4}.*T.*Z(\\d{2}:\\d{2}){0,1}$|^\\d{4}.*T.*[+-]\\d{2}.*$";
+        if (date instanceof Calendar)
+        {
+            // A Java Calendar object always has a time zone information
+            return true;
+        }
+        else if (date instanceof String)
+        {
+            return Pattern.matches(datePattern, (String) date);
+        }
+        return false;
+    }
+
+    /**
+     * Verifies that a date item is a COSString and has the format "D:YYYYMMDDHHmmSSOHH'mm'", where
+     * D:YYYY is mandatory and the next fields optional, but only if all of their preceding fields
+     * are also present. This needs to be done because the other date utilities are too lenient.
+     *
+     * @param item the date item that is to be checked.
+     * @return true if the date format is assumed to be valid, false if not.
+     */
+    private boolean isValidPDFDateFormat(COSBase item)
+    {
+        if (item instanceof COSString)
+        {
+            String date = ((COSString) item).getString();
+            if (date.matches("D:\\d{4}(\\d{2}(\\d{2}(\\d{2}(\\d{2}(\\d{2}([\\+\\-Z](\\d{2}'\\d{2}')?)?)?)?)?)?)?"))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
 }

@@ -32,6 +32,7 @@ import java.io.InputStream;
 import java.util.List;
 
 import org.apache.commons.io.IOUtils;
+import static org.apache.commons.io.IOUtils.closeQuietly;
 import org.apache.pdfbox.cos.COSArray;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDocument;
@@ -39,16 +40,18 @@ import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSObject;
 import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.persistence.util.COSObjectKey;
+import org.apache.pdfbox.cos.COSObjectKey;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
 import org.apache.pdfbox.preflight.exception.ValidationException;
 import org.apache.pdfbox.preflight.utils.COSUtils;
 import org.apache.pdfbox.preflight.utils.FilterHelper;
+import org.apache.pdfbox.util.Charsets;
 
 public class StreamValidationProcess extends AbstractProcess
 {
 
+    @Override
     public void validate(PreflightContext ctx) throws ValidationException
     {
         PDDocument pdfDoc = ctx.getDocument();
@@ -92,7 +95,7 @@ public class StreamValidationProcess extends AbstractProcess
      */
     protected void checkFilters(COSStream stream, PreflightContext context)
     {
-        COSBase bFilter = stream.getItem(COSName.FILTER);
+        COSBase bFilter = stream.getDictionaryObject(COSName.FILTER);
         if (bFilter != null)
         {
             COSDocument cosDocument = context.getDocument().getDocument();
@@ -122,7 +125,6 @@ public class StreamValidationProcess extends AbstractProcess
     private boolean readUntilStream(InputStream ra) throws IOException
     {
         boolean search = true;
-        // String stream = "";
         boolean maybe = false;
         int lastChar = -1;
         do
@@ -131,15 +133,12 @@ public class StreamValidationProcess extends AbstractProcess
             switch (c)
             {
             case 's':
-                // stream = "s";
                 maybe = true;
                 lastChar = c;
                 break;
             case 't':
-                // if (maybe && stream.endsWith("s")) {
                 if (maybe && lastChar == 's')
                 {
-                    // stream = stream + "t";
                     lastChar = c;
                 }
                 else
@@ -149,10 +148,8 @@ public class StreamValidationProcess extends AbstractProcess
                 }
                 break;
             case 'r':
-                // if (maybe && stream.endsWith("t")) {
                 if (maybe && lastChar == 't')
                 {
-                    // stream = stream + "r";
                     lastChar = c;
                 }
                 else
@@ -162,11 +159,9 @@ public class StreamValidationProcess extends AbstractProcess
                 }
                 break;
             case 'e':
-                // if (maybe && stream.endsWith("r")) {
                 if (maybe && lastChar == 'r')
                 {
                     lastChar = c;
-                    // stream = stream + "e";
                 }
                 else
                 {
@@ -174,11 +169,9 @@ public class StreamValidationProcess extends AbstractProcess
                 }
                 break;
             case 'a':
-                // if (maybe && stream.endsWith("e")) {
                 if (maybe && lastChar == 'e')
                 {
                     lastChar = c;
-                    // stream = stream + "a";
                 }
                 else
                 {
@@ -186,7 +179,6 @@ public class StreamValidationProcess extends AbstractProcess
                 }
                 break;
             case 'm':
-                // if (maybe && stream.endsWith("a")) {
                 if (maybe && lastChar == 'a')
                 {
                     return true;
@@ -226,7 +218,7 @@ public class StreamValidationProcess extends AbstractProcess
                     long curSkip = ra.skip(offset - skipped);
                     if (curSkip < 0)
                     {
-                        org.apache.pdfbox.io.IOUtils.closeQuietly(ra);
+                        closeQuietly(ra);
                         addValidationError(context, new ValidationError(ERROR_SYNTAX_STREAM_DAMAGED, "Unable to skip bytes in the PDFFile to check stream length"));
                         return;
                     }
@@ -250,7 +242,7 @@ public class StreamValidationProcess extends AbstractProcess
 
                     do
                     {
-                        int cr = 0;
+                        int cr;
                         if (nbBytesToRead > 1024)
                         {
                             cr = ra.read(buffer, 0, 1024);
@@ -261,9 +253,8 @@ public class StreamValidationProcess extends AbstractProcess
                         }
                         if (cr == -1)
                         {
-                            addValidationError(context, new ValidationError(ERROR_SYNTAX_STREAM_LENGTH_INVALID,
-                                "Stream length is invalid [cObj="+cObj.toString()+"]"));
-                            org.apache.pdfbox.io.IOUtils.closeQuietly(ra);
+                            addStreamLengthValidationError(context, cObj, length, "");
+                            closeQuietly(ra);
                             return;
                         }
                         else
@@ -280,50 +271,46 @@ public class StreamValidationProcess extends AbstractProcess
                     }
 
                     // ---- check the content of 10 last characters
-                    String endStream = new String(buffer2);
+                    String endStream = new String(buffer2, Charsets.ISO_8859_1);
                     if (buffer2[0] == '\r' && buffer2[1] == '\n')
                     {
                         if (!endStream.contains("endstream"))
                         {
-                            addValidationError(context, new ValidationError(ERROR_SYNTAX_STREAM_LENGTH_INVALID,
-                                "Stream length is invalid [cObj="+cObj.toString()+"; defined length="+length+"; buffer2="+endStream+"]"));
+                            addStreamLengthValidationError(context, cObj, length, endStream);
                         }
                     }
                     else if (buffer2[0] == '\r' && buffer2[1] == 'e')
                     {
                         if (!endStream.contains("endstream"))
                         {
-                            addValidationError(context, new ValidationError(ERROR_SYNTAX_STREAM_LENGTH_INVALID,
-                                "Stream length is invalid [cObj="+cObj.toString()+"; defined length="+length+"; buffer2="+endStream+"]"));
+                            addStreamLengthValidationError(context, cObj, length, endStream);
                         }
                     }
                     else if (buffer2[0] == '\n' && buffer2[1] == 'e')
                     {
                         if (!endStream.contains("endstream"))
                         {
-                            addValidationError(context, new ValidationError(ERROR_SYNTAX_STREAM_LENGTH_INVALID,
-                                "Stream length is invalid [cObj="+cObj.toString()+"; defined length="+length+"; buffer2="+endStream+"]"));
+                            addStreamLengthValidationError(context, cObj, length, endStream);
                         }
                     }
                     else
                     {
-                        if (!endStream.startsWith("endStream")) {
-                             addValidationError(context, new ValidationError(ERROR_SYNTAX_STREAM_LENGTH_INVALID,
-                                "Stream length is invalid [cObj="+cObj.toString()+"; defined length="+length+"; buffer2="+endStream+"]"));
+                        if (!endStream.startsWith("endStream"))
+                        {
+                             addStreamLengthValidationError(context, cObj, length, endStream);
                         }
                     }
 
                 }
                 else
                 {
-                    addValidationError(context, new ValidationError(ERROR_SYNTAX_STREAM_LENGTH_INVALID,
-                            "Stream length is invalid"));
+                    addStreamLengthValidationError(context, cObj, length, "");
                 }
             }
         }
         catch (IOException e)
         {
-            throw new ValidationException("Unable to read a stream to validate it due to : " + e.getMessage(), e);
+            throw new ValidationException("Unable to read a stream to validate: " + e.getMessage(), e);
         }
         finally
         {
@@ -360,4 +347,11 @@ public class StreamValidationProcess extends AbstractProcess
                     "F, FFilter or FDecodeParms keys are present in the stream dictionary"));
         }
     }
+    
+    private void addStreamLengthValidationError(PreflightContext context, COSObject cObj, int length, String endStream)
+    {
+        addValidationError(context, new ValidationError(ERROR_SYNTAX_STREAM_LENGTH_INVALID,
+                "Stream length is invalid [cObj=" + cObj + "; defined length=" + length + "; buffer2=" + endStream + "]"));
+    }
+
 }

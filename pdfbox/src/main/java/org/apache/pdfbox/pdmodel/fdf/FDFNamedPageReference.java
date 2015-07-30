@@ -18,22 +18,19 @@ package org.apache.pdfbox.pdmodel.fdf;
 
 import java.io.IOException;
 
-import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
-
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.common.COSObjectable;
-
 import org.apache.pdfbox.pdmodel.common.filespecification.PDFileSpecification;
 
 /**
  * This represents an FDF named page reference that is part of the FDF field.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.3 $
+ * @author Ben Litchfield
  */
 public class FDFNamedPageReference implements COSObjectable
 {
-    private COSDictionary ref;
+    private final COSDictionary ref;
 
     /**
      * Default constructor.
@@ -48,7 +45,7 @@ public class FDFNamedPageReference implements COSObjectable
      *
      * @param r The FDF named page reference dictionary.
      */
-    public FDFNamedPageReference( COSDictionary r )
+    public FDFNamedPageReference(COSDictionary r)
     {
         ref = r;
     }
@@ -58,29 +55,20 @@ public class FDFNamedPageReference implements COSObjectable
      *
      * @return The cos object that matches this Java object.
      */
-    public COSBase getCOSObject()
+    @Override
+    public COSDictionary getCOSObject()
     {
         return ref;
     }
 
     /**
-     * Convert this standard java object to a COS object.
-     *
-     * @return The cos object that matches this Java object.
-     */
-    public COSDictionary getCOSDictionary()
-    {
-        return ref;
-    }
-
-    /**
-     * This will get the name of the referenced page.  A required parameter.
+     * This will get the name of the referenced page. A required parameter.
      *
      * @return The name of the referenced page.
      */
     public String getName()
     {
-        return ref.getString( "Name" );
+        return ref.getString(COSName.NAME);
     }
 
     /**
@@ -88,13 +76,13 @@ public class FDFNamedPageReference implements COSObjectable
      *
      * @param name The referenced page name.
      */
-    public void setName( String name )
+    public void setName(String name)
     {
-        ref.setString( "Name", name );
+        ref.setString(COSName.NAME, name);
     }
 
     /**
-     * This will get the file specification of this reference.  An optional parameter.
+     * This will get the file specification of this reference. An optional parameter.
      *
      * @return The F entry for this dictionary.
      *
@@ -102,7 +90,7 @@ public class FDFNamedPageReference implements COSObjectable
      */
     public PDFileSpecification getFileSpecification() throws IOException
     {
-        return PDFileSpecification.createFS( ref.getDictionaryObject( "F" ) );
+        return PDFileSpecification.createFS(ref.getDictionaryObject(COSName.F));
     }
 
     /**
@@ -110,8 +98,8 @@ public class FDFNamedPageReference implements COSObjectable
      *
      * @param fs The file specification to set.
      */
-    public void setFileSpecification( PDFileSpecification fs )
+    public void setFileSpecification(PDFileSpecification fs)
     {
-        ref.setItem( "F", fs );
+        ref.setItem(COSName.F, fs);
     }
 }

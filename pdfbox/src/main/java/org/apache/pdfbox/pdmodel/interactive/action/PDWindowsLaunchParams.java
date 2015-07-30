@@ -16,7 +16,6 @@
  */
 package org.apache.pdfbox.pdmodel.interactive.action;
 
-import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 
 import org.apache.pdfbox.pdmodel.common.COSObjectable;
@@ -24,8 +23,7 @@ import org.apache.pdfbox.pdmodel.common.COSObjectable;
 /**
  * Launch paramaters for the windows OS.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.2 $
+ * @author Ben Litchfield
  */
 public class PDWindowsLaunchParams implements COSObjectable
 {
@@ -66,17 +64,8 @@ public class PDWindowsLaunchParams implements COSObjectable
      *
      * @return The cos object that matches this Java object.
      */
-    public COSBase getCOSObject()
-    {
-        return params;
-    }
-
-    /**
-     * Convert this standard java object to a COS object.
-     *
-     * @return The cos object that matches this Java object.
-     */
-    public COSDictionary getCOSDictionary()
+    @Override
+    public COSDictionary getCOSObject()
     {
         return params;
     }

@@ -21,7 +21,7 @@ import java.io.IOException;
 /**
  * A table in a true type font.
  * 
- * @author Ben Litchfield (ben@benlitchfield.com)
+ * @author Ben Litchfield
  * 
  */
 public class OS2WindowsMetricsTable extends TTFTable
@@ -147,6 +147,42 @@ public class OS2WindowsMetricsTable extends TTFTable
     public static final int FAMILY_CLASS_SYMBOLIC = 12;
 
     /**
+     * Restricted License embedding: must not be modified, embedded or exchanged in any manner.
+     *
+     * <p>For Restricted License embedding to take effect, it must be the only level of embedding
+     * selected.
+     */
+    public static final short FSTYPE_RESTRICTED = 0x0001;
+
+    /**
+     * Preview & Print embedding: the font may be embedded, and temporarily loaded on the
+     * remote system. No edits can be applied to the document.
+     */
+    public static final short FSTYPE_PREVIEW_AND_PRINT = 0x0004;
+
+    /**
+     * Editable embedding: the font may be embedded but must only be installed temporarily on other
+     * systems. Documents may be editied and changes saved.
+     */
+    public static final short FSTYPE_EDITIBLE = 0x0004;
+
+    /**
+     * No subsetting: the font must not be subsetted prior to embedding.
+     */
+    public static final short FSTYPE_NO_SUBSETTING = 0x0100;
+
+    /**
+     * Bitmap embedding only: only bitmaps contained in the font may be embedded. No outline data
+     * may be embedded. Other embedding restrictions specified in bits 0-3 and 8 also apply.
+     */
+    public static final short FSTYPE_BITMAP_ONLY = 0x0200;
+
+    OS2WindowsMetricsTable(TrueTypeFont font)
+    {
+        super(font);
+    }
+
+    /**
      * @return Returns the achVendId.
      */
     public String getAchVendId()
@@ -225,23 +261,7 @@ public class OS2WindowsMetricsTable extends TTFTable
     {
         this.familyClass = familyClassValue;
     }
-
-    /**
-     * @return Returns the familySubClass.
-     */
-    public int getFamilySubClass()
-    {
-        return familySubClass;
-    }
-
-    /**
-     * @param familySubClassValue The familySubClass to set.
-     */
-    public void setFamilySubClass(int familySubClassValue)
-    {
-        this.familySubClass = familySubClassValue;
-    }
-
+    
     /**
      * @return Returns the firstCharIndex.
      */
@@ -483,19 +503,19 @@ public class OS2WindowsMetricsTable extends TTFTable
     }
 
     /**
-     * @return Returns the typeLineGap.
+     * @return Returns the typoLineGap.
      */
-    public int getTypeLineGap()
+    public int getTypoLineGap()
     {
-        return typeLineGap;
+        return typoLineGap;
     }
 
     /**
-     * @param typeLineGapValue The typeLineGap to set.
+     * @param typeLineGapValue The typoLineGap to set.
      */
-    public void setTypeLineGap(int typeLineGapValue)
+    public void setTypoLineGap(int typeLineGapValue)
     {
-        this.typeLineGap = typeLineGapValue;
+        this.typoLineGap = typeLineGapValue;
     }
 
     /**
@@ -674,6 +694,46 @@ public class OS2WindowsMetricsTable extends TTFTable
         this.winDescent = winDescentValue;
     }
 
+    /**
+     * Returns the sxHeight.
+     */
+    public int getHeight()
+    {
+        return sxHeight;
+    }
+
+    /**
+     * Returns the sCapHeight.
+     */
+    public int getCapHeight()
+    {
+        return sCapHeight;
+    }
+
+    /**
+     * Returns the usDefaultChar.
+     */
+    public int getDefaultChar()
+    {
+        return usDefaultChar;
+    }
+
+    /**
+     * Returns the usBreakChar.
+     */
+    public int getBreakChar()
+    {
+        return usBreakChar;
+    }
+
+    /**
+     * Returns the usMaxContext.
+     */
+    public int getMaxContext()
+    {
+        return usMaxContext;
+    }
+
     private int version;
     private short averageCharWidth;
     private int weightClass;
@@ -690,7 +750,6 @@ public class OS2WindowsMetricsTable extends TTFTable
     private short strikeoutSize;
     private short strikeoutPosition;
     private int familyClass;
-    private int familySubClass;
     private byte[] panose = new byte[10];
     private long unicodeRange1;
     private long unicodeRange2;
@@ -702,11 +761,16 @@ public class OS2WindowsMetricsTable extends TTFTable
     private int lastCharIndex;
     private int typoAscender;
     private int typoDescender;
-    private int typeLineGap;
+    private int typoLineGap;
     private int winAscent;
     private int winDescent;
     private long codePageRange1 = -1;
     private long codePageRange2 = -1;
+    private int sxHeight;
+    private int sCapHeight;
+    private int usDefaultChar;
+    private int usBreakChar;
+    private int usMaxContext;
 
     /**
      * A tag that identifies this table type.
@@ -737,8 +801,7 @@ public class OS2WindowsMetricsTable extends TTFTable
         superscriptYOffset = data.readSignedShort();
         strikeoutSize = data.readSignedShort();
         strikeoutPosition = data.readSignedShort();
-        familyClass = data.readUnsignedByte();
-        familySubClass = data.readUnsignedByte();
+        familyClass = data.readSignedShort();
         panose = data.read(10);
         unicodeRange1 = data.readUnsignedInt();
         unicodeRange2 = data.readUnsignedInt();
@@ -750,13 +813,21 @@ public class OS2WindowsMetricsTable extends TTFTable
         lastCharIndex = data.readUnsignedShort();
         typoAscender = data.readSignedShort();
         typoDescender = data.readSignedShort();
-        typeLineGap = data.readSignedShort();
+        typoLineGap = data.readSignedShort();
         winAscent = data.readUnsignedShort();
         winDescent = data.readUnsignedShort();
         if (version >= 1)
         {
             codePageRange1 = data.readUnsignedInt();
             codePageRange2 = data.readUnsignedInt();
+        }
+        if (version >= 1.2)
+        {
+            sxHeight = data.readSignedShort();
+            sCapHeight = data.readSignedShort();
+            usDefaultChar = data.readUnsignedShort();
+            usBreakChar = data.readUnsignedShort();
+            usMaxContext = data.readUnsignedShort();
         }
         initialized = true;
     }

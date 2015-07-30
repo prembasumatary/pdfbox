@@ -37,7 +37,7 @@ import org.apache.pdfbox.pdmodel.common.PDStream;
  */
 public final class PDOutputIntent implements COSObjectable
 {
-    private COSDictionary dictionary;
+    private final COSDictionary dictionary;
 
     public PDOutputIntent(PDDocument doc, InputStream colorProfile) throws IOException
     {
@@ -53,6 +53,7 @@ public final class PDOutputIntent implements COSObjectable
         this.dictionary = dictionary;
     }
 
+    @Override
     public COSBase getCOSObject()
     {
         return dictionary;
@@ -60,7 +61,7 @@ public final class PDOutputIntent implements COSObjectable
 
     public COSStream getDestOutputIntent()
     {
-        return (COSStream) dictionary.getItem(COSName.DEST_OUTPUT_PROFILE);
+        return (COSStream) dictionary.getDictionaryObject(COSName.DEST_OUTPUT_PROFILE);
     }
 
     public String getInfo()

@@ -17,10 +17,6 @@
 
 package org.apache.fontbox.util.autodetect;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * Unix font directory finder. This class is based on a class provided by Apache FOP. see
  * org.apache.fop.fonts.autodetect.UnixFontDirFinder
@@ -33,6 +29,7 @@ public class UnixFontDirFinder extends NativeFontDirFinder
      * 
      * @return a list of possible font locations
      */
+    @Override
     protected String[] getSearchableDirectories()
     {
         return new String[] { System.getProperty("user.home") + "/.fonts", // user
@@ -42,31 +39,4 @@ public class UnixFontDirFinder extends NativeFontDirFinder
                 "/usr/X11R6/lib/X11/fonts" // X
         };
     }
-
-    /**
-     * {@inheritDoc}
-     */
-    public Map<String, String> getCommonTTFMapping()
-    {
-        HashMap<String,String> map = new HashMap<String,String>();
-        map.put("TimesNewRoman,BoldItalic","LiberationSerif-BoldItalic");
-        map.put("TimesNewRoman,Bold","LiberationSerif-Bold");
-        map.put("TimesNewRoman,Italic","LiberationSerif-Italic");
-        map.put("TimesNewRoman","LiberationSerif");
-
-        map.put("Arial,BoldItalic","LiberationSans-BoldItalic");
-        map.put("Arial,Italic","LiberationSans-Italic");
-        map.put("Arial,Bold","LiberationSans-Bold");
-        map.put("Arial","LiberationSans");
-        
-        map.put("Courier,BoldItalic","LiberationMono-BoldItalic");
-        map.put("Courier,Italic","LiberationMono-Italic");
-        map.put("Courier,Bold","LiberationMono-Bold");
-        map.put("Courier","LiberationMono");
-        
-        map.put("Symbol", "OpenSymbol");
-        map.put("ZapfDingbats", "Dingbats");
-        return Collections.unmodifiableMap(map);
-    }
-    
 }

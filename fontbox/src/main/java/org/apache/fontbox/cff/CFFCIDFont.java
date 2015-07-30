@@ -17,13 +17,13 @@
 
 package org.apache.fontbox.cff;
 
-import org.apache.fontbox.type1.Type1CharStringReader;
-
+import java.awt.geom.GeneralPath;
 import java.io.IOException;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.apache.fontbox.type1.Type1CharStringReader;
 
 /**
  * A Type 0 CIDFont represented in a CFF file. Thread safe.
@@ -243,16 +243,41 @@ public class CFFCIDFont extends CFFFont
     @Override
     public List<Number> getFontMatrix()
     {
-        // some malformed CIDFonts have their FontMatrix in a Font DICT
-        if (fontDictionaries.size() > 0 && fontDictionaries.get(0).containsKey("FontMatrix"))
+        // our parser guarantees that FontMatrix will be present and correct in the Top DICT
+        return (List<Number>)topDict.get("FontMatrix");
+    }
+
+    @Override
+    public GeneralPath getPath(String selector) throws IOException
+    {
+        int cid = selectorToCID(selector);
+        return getType2CharString(cid).getPath();
+    }
+
+    @Override
+    public float getWidth(String selector) throws IOException
+    {
+        int cid = selectorToCID(selector);
+        return getType2CharString(cid).getWidth();
+    }
+
+    @Override
+    public boolean hasGlyph(String selector) throws IOException
+    {
+        int cid = selectorToCID(selector);
+        return cid != 0;
+    }
+
+    /**
+     * Parses a CID selector of the form \ddddd.
+     */
+    private int selectorToCID(String selector)
+    {
+        if (!selector.startsWith("\\"))
         {
-            return (List<Number>)fontDictionaries.get(0).get("FontMatrix");
+            throw new IllegalArgumentException("Invalid selector");
         }
-        else
-        {
-            // but it should be in the Top DICT
-            return (List<Number>)topDict.get("FontMatrix");
-        }
+        return Integer.parseInt(selector.substring(1));
     }
 
     /**

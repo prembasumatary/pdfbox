@@ -21,7 +21,7 @@ import java.io.IOException;
 /**
  * A table in a true type font.
  * 
- * @author Ben Litchfield (ben@benlitchfield.com)
+ * @author Ben Litchfield
  */
 public class IndexToLocationTable extends TTFTable
 {
@@ -34,7 +34,12 @@ public class IndexToLocationTable extends TTFTable
     public static final String TAG = "loca";
     
     private long[] offsets;
-    
+
+    IndexToLocationTable(TrueTypeFont font)
+    {
+        super(font);
+    }
+
     /**
      * This will read the required data from the stream.
      * 

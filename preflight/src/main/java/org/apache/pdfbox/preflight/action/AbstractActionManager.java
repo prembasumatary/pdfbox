@@ -35,11 +35,11 @@ public abstract class AbstractActionManager
     /**
      * ActionManager factory used to create new ActionManager
      */
-    protected ActionManagerFactory actionFact = null;
+    private ActionManagerFactory actionFact = null;
     /**
      * Action name in a Additional Action dictionary
      */
-    protected String aaKey = null;
+    private String aaKey = null;
     /**
      * The action dictionary checked by this class
      */
@@ -113,7 +113,7 @@ public abstract class AbstractActionManager
     }
 
     /**
-     * Call the {@link AbstractActionManager#valid(boolean)} method with the additonalActionAuth set to false.
+     * Call the {@link AbstractActionManager#valid(boolean)} method with the additionalActionAuth set to false.
      * 
      * @return the validation state.
      * @throws ValidationException
@@ -161,5 +161,5 @@ public abstract class AbstractActionManager
      * 
      * @return True if the action is valid, false otherwise.
      */
-    protected abstract boolean innerValid();
+    protected abstract boolean innerValid() throws ValidationException;
 }

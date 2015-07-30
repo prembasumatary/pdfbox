@@ -21,19 +21,10 @@
 
 package org.apache.pdfbox.preflight.process.reflect;
 
-import static org.apache.pdfbox.preflight.PreflightConfiguration.EXTGSTATE_PROCESS;
-import static org.apache.pdfbox.preflight.PreflightConfiguration.FONT_PROCESS;
-import static org.apache.pdfbox.preflight.PreflightConfiguration.GRAPHIC_PROCESS;
-import static org.apache.pdfbox.preflight.PreflightConfiguration.SHADDING_PATTERN_PROCESS;
-import static org.apache.pdfbox.preflight.PreflightConfiguration.TILING_PATTERN_PROCESS;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_GRAPHIC_INVALID_PATTERN_DEFINITION;
-import static org.apache.pdfbox.preflight.PreflightConstants.TRANPARENCY_DICTIONARY_KEY_EXTGSTATE;
-
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
-
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSDocument;
@@ -42,10 +33,10 @@ import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDFontFactory;
+import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.pattern.PDAbstractPattern;
 import org.apache.pdfbox.pdmodel.graphics.pattern.PDTilingPattern;
 import org.apache.pdfbox.pdmodel.graphics.shading.PDShading;
-import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.preflight.PreflightConstants;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.PreflightPath;
@@ -55,14 +46,25 @@ import org.apache.pdfbox.preflight.process.AbstractProcess;
 import org.apache.pdfbox.preflight.utils.COSUtils;
 import org.apache.pdfbox.preflight.utils.ContextHelper;
 
+
+import static org.apache.pdfbox.preflight.PreflightConfiguration.EXTGSTATE_PROCESS;
+import static org.apache.pdfbox.preflight.PreflightConfiguration.FONT_PROCESS;
+import static org.apache.pdfbox.preflight.PreflightConfiguration.GRAPHIC_PROCESS;
+import static org.apache.pdfbox.preflight.PreflightConfiguration.SHADING_PATTERN_PROCESS;
+import static org.apache.pdfbox.preflight.PreflightConfiguration.TILING_PATTERN_PROCESS;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_GRAPHIC_INVALID_PATTERN_DEFINITION;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_GRAPHIC_MAIN;
+import static org.apache.pdfbox.preflight.PreflightConstants.TRANPARENCY_DICTIONARY_KEY_EXTGSTATE;
+
 public class ResourcesValidationProcess extends AbstractProcess
 {
 
+    @Override
     public void validate(PreflightContext ctx) throws ValidationException
     {
         PreflightPath vPath = ctx.getValidationPath();
-        if (vPath.isEmpty()) {
-            return;
+        if (vPath.isEmpty())
+        {
         }
         else if (!vPath.isExpectedType(PDResources.class))
         {
@@ -70,9 +72,8 @@ public class ResourcesValidationProcess extends AbstractProcess
         } 
         else
         {
-
             PDResources resources = (PDResources) vPath.peek();
-
+            
             validateFonts(ctx, resources);
             validateExtGStates(ctx, resources);
             validateShadingPattern(ctx, resources);
@@ -232,12 +233,12 @@ public class ResourcesValidationProcess extends AbstractProcess
             for (COSName name : resources.getShadingNames())
             {
                 PDShading shading = resources.getShading(name);
-                ContextHelper.validateElement(context, shading, SHADDING_PATTERN_PROCESS);
+                ContextHelper.validateElement(context, shading, SHADING_PATTERN_PROCESS);
             }
         }
         catch (IOException e)
         {
-            context.addValidationError(new ValidationError(ERROR_GRAPHIC_INVALID_PATTERN_DEFINITION, e.getMessage()));
+            context.addValidationError(new ValidationError(ERROR_GRAPHIC_INVALID_PATTERN_DEFINITION, e.getMessage(), e));
         }
     }
 
@@ -263,7 +264,7 @@ public class ResourcesValidationProcess extends AbstractProcess
         }
         catch (IOException e)
         {
-            context.addValidationError(new ValidationError(ERROR_GRAPHIC_INVALID_PATTERN_DEFINITION, e.getMessage()));
+            context.addValidationError(new ValidationError(ERROR_GRAPHIC_INVALID_PATTERN_DEFINITION, e.getMessage(), e));
         }
     }
 
@@ -282,7 +283,7 @@ public class ResourcesValidationProcess extends AbstractProcess
                     try
                     {
                         COSStream stream = COSUtils.getAsStream(xobj, cosDocument);
-                        PDXObject pdXObject = PDXObject.createXObject(stream, entry.getKey().getName(), resources);
+                        PDXObject pdXObject = PDXObject.createXObject(stream, resources);
                         if (pdXObject != null)
                         {
                             ContextHelper.validateElement(context, pdXObject, GRAPHIC_PROCESS);
@@ -294,7 +295,9 @@ public class ResourcesValidationProcess extends AbstractProcess
                     }
                     catch (IOException e)
                     {
-                        throw new ValidationException(e.getMessage(), e);
+                        context.addValidationError(new ValidationError(ERROR_GRAPHIC_MAIN,
+                                e.getMessage() + " for entry '"
+                                + entry.getKey().getName() + "'", e));
                     }
                 }
             }

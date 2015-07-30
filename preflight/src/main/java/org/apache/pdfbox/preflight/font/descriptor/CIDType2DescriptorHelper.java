@@ -36,7 +36,6 @@ import org.apache.pdfbox.pdmodel.font.PDFontLike;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
-import org.apache.pdfbox.preflight.font.FontValidator;
 import org.apache.pdfbox.preflight.font.container.CIDType2Container;
 import org.apache.pdfbox.preflight.utils.COSUtils;
 
@@ -56,14 +55,14 @@ public class CIDType2DescriptorHelper extends FontDescriptorHelper<CIDType2Conta
      */
     protected void checkCIDSet(PDFontDescriptor pfDescriptor)
     {
-        if (FontValidator.isSubSet(pfDescriptor.getFontName()))
+        if (isSubSet(pfDescriptor.getFontName()))
         {
             COSDocument cosDocument = context.getDocument().getDocument();
             COSBase cidset = pfDescriptor.getCOSObject().getItem(COSName.getPDFName(FONT_DICTIONARY_KEY_CIDSET));
             if (cidset == null || !COSUtils.isStream(cidset, cosDocument))
             {
                 this.fContainer.push(new ValidationResult.ValidationError(ERROR_FONTS_CIDSET_MISSING_FOR_SUBSET,
-                        "The CIDSet entry is missing for the Composite Subset"));
+                        pfDescriptor.getFontName() + ": The CIDSet entry is missing for the Composite Subset"));
             }
         }
     }
@@ -78,8 +77,8 @@ public class CIDType2DescriptorHelper extends FontDescriptorHelper<CIDType2Conta
             COSStream stream = ff2.getStream();
             if (stream == null)
             {
-                this.fContainer.push(new ValidationError(ERROR_FONTS_FONT_FILEX_INVALID, "The FontFile is missing for "
-                        + fontDescriptor.getFontName()));
+                this.fContainer.push(new ValidationError(ERROR_FONTS_FONT_FILEX_INVALID, 
+                        fontDescriptor.getFontName() + ": The FontFile is missing"));
                 this.fContainer.notEmbedded();
             }
         }
@@ -92,7 +91,8 @@ public class CIDType2DescriptorHelper extends FontDescriptorHelper<CIDType2Conta
     {
         if (font.isDamaged())
         {
-            this.fContainer.push(new ValidationError(ERROR_FONTS_CID_DAMAGED, "The FontFile can't be read"));
+            this.fContainer.push(new ValidationError(ERROR_FONTS_CID_DAMAGED, 
+                    font.getName() + ": The FontFile can't be read"));
         }
     }
 }

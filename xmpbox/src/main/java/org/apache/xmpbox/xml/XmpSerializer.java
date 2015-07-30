@@ -57,7 +57,7 @@ public class XmpSerializer
 
     private boolean parseTypeResourceForLi = true;
 
-    public XmpSerializer() throws XmpSerializationException
+    public XmpSerializer()
     {
         // xml init
         DocumentBuilderFactory builderFactory = DocumentBuilderFactory.newInstance();
@@ -67,9 +67,9 @@ public class XmpSerializer
         }
         catch (ParserConfigurationException e)
         {
-            throw new XmpSerializationException("Failed to init XmpSerializer", e);
+            // never happens, because we don't call builderFactory#setAttribute
+            throw new RuntimeException(e);
         }
-
     }
 
     public void serialize(XMPMetadata metadata, OutputStream os, boolean withXpacket) throws TransformerException
@@ -95,12 +95,12 @@ public class XmpSerializer
         fillElementWithAttributes(selem, schema);
         // the content
         List<AbstractField> fields = schema.getAllProperties();
-        serializeFields(doc, selem, fields,schema.getPrefix(), true);
+        serializeFields(doc, selem, fields,schema.getPrefix(), null, true);
         // return created schema
         return selem;
     }
 
-    public void serializeFields(Document doc, Element parent, List<AbstractField> fields, String resourceNS, boolean wrapWithProperty)
+    public void serializeFields(Document doc, Element parent, List<AbstractField> fields, String resourceNS, String prefix, boolean wrapWithProperty)
     {
         for (AbstractField field : fields)
         {
@@ -108,8 +108,25 @@ public class XmpSerializer
             if (field instanceof AbstractSimpleProperty)
             {
                 AbstractSimpleProperty simple = (AbstractSimpleProperty) field;
-                Element esimple = doc.createElement(simple.getPrefix() + ":" + simple.getPropertyName());
+                
+                String localPrefix;
+                
+                if (prefix != null && !prefix.isEmpty())
+                {
+                    localPrefix = prefix;
+                }
+                else
+                {
+                    localPrefix = simple.getPrefix();
+                }
+                
+                Element esimple = doc.createElement(localPrefix + ":" + simple.getPropertyName());
                 esimple.setTextContent(simple.getStringValue());
+                List<Attribute> attributes = simple.getAllAttributes();
+                for (Attribute attribute : attributes)
+                {
+                    esimple.setAttributeNS(attribute.getNamespace(), attribute.getName(), attribute.getValue());
+                }
                 parent.appendChild(esimple);
             }
             else if (field instanceof ArrayProperty)
@@ -125,7 +142,7 @@ public class XmpSerializer
                 asimple.appendChild(econtainer);
                 // for each element of the array
                 List<AbstractField> innerFields = array.getAllProperties();
-                serializeFields(doc, econtainer, innerFields,resourceNS, false);
+                serializeFields(doc, econtainer, innerFields,resourceNS, XmpConstants.DEFAULT_RDF_PREFIX, false);
             }
             else if (field instanceof AbstractStructuredType)
             {
@@ -148,7 +165,7 @@ public class XmpSerializer
                 {
                     estructured.setAttribute("rdf:parseType", "Resource");
                     // all properties
-                    serializeFields(doc, estructured, innerFields,resourceNS, true);
+                    serializeFields(doc, estructured, innerFields,resourceNS, null, true);
                 }
                 else
                 {
@@ -156,7 +173,7 @@ public class XmpSerializer
                     Element econtainer = doc.createElement(XmpConstants.DEFAULT_RDF_PREFIX + ":" + "Description");
                     estructured.appendChild(econtainer);
                     // all properties
-                    serializeFields(doc, econtainer, innerFields,resourceNS, true);
+                    serializeFields(doc, econtainer, innerFields,resourceNS, null, true);
                 }
             }
             else
@@ -176,10 +193,6 @@ public class XmpSerializer
             if (XmpConstants.RDF_NAMESPACE.equals(attribute.getNamespace()))
             {
                 target.setAttribute(XmpConstants.DEFAULT_RDF_PREFIX + ":" + attribute.getName(), attribute.getValue());
-            }
-            else if (target.getNamespaceURI().equals(attribute.getNamespace()))
-            {
-                target.setAttribute(attribute.getName(), attribute.getValue());
             }
             else
             {

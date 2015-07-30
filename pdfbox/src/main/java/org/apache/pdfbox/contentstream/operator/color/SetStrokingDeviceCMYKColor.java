@@ -19,7 +19,6 @@ package org.apache.pdfbox.contentstream.operator.color;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.graphics.color.PDColorSpace;
-import org.apache.pdfbox.pdmodel.graphics.color.PDDeviceCMYK;
 import org.apache.pdfbox.contentstream.operator.Operator;
 
 import java.io.IOException;
@@ -36,7 +35,7 @@ public class SetStrokingDeviceCMYKColor extends SetStrokingColor
     public void process(Operator operator, List<COSBase> arguments) throws IOException
     {
         PDColorSpace cs = context.getResources().getColorSpace(COSName.DEVICECMYK);
-        context.getGraphicsState().setNonStrokingColorSpace(cs);
+        context.getGraphicsState().setStrokingColorSpace(cs);
         super.process(operator, arguments);
     }
 

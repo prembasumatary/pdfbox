@@ -21,11 +21,14 @@
 
 package org.apache.pdfbox.preflight.process;
 
+import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSName;
 import static org.apache.pdfbox.preflight.PreflightConfiguration.PAGE_PROCESS;
 import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_SYNTAX_NOCATALOG;
 
 import org.apache.pdfbox.pdmodel.PDDocumentCatalog;
 import org.apache.pdfbox.pdmodel.PDPage;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_PDF_PROCESSING_MISSING;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
 import org.apache.pdfbox.preflight.exception.ValidationException;
@@ -34,20 +37,30 @@ import org.apache.pdfbox.preflight.utils.ContextHelper;
 public class PageTreeValidationProcess extends AbstractProcess
 {
 
+    @Override
     public void validate(PreflightContext context) throws ValidationException
     {
         PDDocumentCatalog catalog = context.getDocument().getDocumentCatalog();
         if (catalog != null)
         {
+            COSDictionary catalogDict = catalog.getCOSObject();
+            if (!(catalogDict.getDictionaryObject(COSName.PAGES) instanceof COSDictionary))
+            {
+                addValidationError(context, new ValidationError(ERROR_PDF_PROCESSING_MISSING, 
+                        "/Pages dictionary entry is missing in document catalog"));
+                return;
+            }
             int numPages = context.getDocument().getNumberOfPages();
             for (int i = 0; i < numPages; i++)
             {
+                context.setCurrentPageNumber(i);
                 validatePage(context, context.getDocument().getPage(i));
+                context.setCurrentPageNumber(null);
             }
         }
         else
         {
-            context.addValidationError(new ValidationError(ERROR_SYNTAX_NOCATALOG, "There are no Catalog entry in the Document."));
+            context.addValidationError(new ValidationError(ERROR_SYNTAX_NOCATALOG, "There are no Catalog entry in the Document"));
         }
     }
 

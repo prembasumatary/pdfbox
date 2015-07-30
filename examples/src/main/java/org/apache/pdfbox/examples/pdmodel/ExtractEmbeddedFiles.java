@@ -17,22 +17,19 @@
 package org.apache.pdfbox.examples.pdmodel;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
-
+import java.util.Map.Entry;
+import org.apache.pdfbox.io.IOUtils;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentNameDictionary;
 import org.apache.pdfbox.pdmodel.PDEmbeddedFilesNameTreeNode;
 import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.common.COSObjectable;
 import org.apache.pdfbox.pdmodel.common.PDNameTreeNode;
 import org.apache.pdfbox.pdmodel.common.filespecification.PDComplexFileSpecification;
 import org.apache.pdfbox.pdmodel.common.filespecification.PDEmbeddedFile;
-import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
-import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationFileAttachment;
 
@@ -41,7 +38,6 @@ import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationFileAttachme
  * <p>
  * Usage: java org.apache.pdfbox.examples.pdmodel.ExtractEmbeddedFiles &lt;input-pdf&gt;
  *
- * @version $Revision$
  */
 public class ExtractEmbeddedFiles
 {
@@ -70,33 +66,21 @@ public class ExtractEmbeddedFiles
             {
                 File pdfFile = new File(args[0]);
                 String filePath = pdfFile.getParent() + System.getProperty("file.separator");
-                document = PDDocument.load( pdfFile );
-                if (document.isEncrypted()) 
-                {
-                    try
-                    {
-                        StandardDecryptionMaterial sdm = new StandardDecryptionMaterial("");
-                        document.openProtection(sdm);
-                    }
-                    catch( InvalidPasswordException e )
-                    {
-                        System.err.println( "Error: The document is encrypted." );
-                    }
-                }
+                document = PDDocument.load(pdfFile );
                 PDDocumentNameDictionary namesDictionary = 
                         new PDDocumentNameDictionary( document.getDocumentCatalog() );
                 PDEmbeddedFilesNameTreeNode efTree = namesDictionary.getEmbeddedFiles();
                 if (efTree != null)
                 {
-                    Map<String,COSObjectable> names = efTree.getNames();
+                    Map<String, PDComplexFileSpecification> names = efTree.getNames();
                     if (names != null)
                     {
                         extractFiles(names, filePath);
                     }
                     else
                     {
-                        List<PDNameTreeNode> kids = efTree.getKids();
-                        for (PDNameTreeNode node : kids)
+                        List<PDNameTreeNode<PDComplexFileSpecification>> kids = efTree.getKids();
+                        for (PDNameTreeNode<PDComplexFileSpecification> node : kids)
                         {
                             names = node.getNames();
                             extractFiles(names, filePath);
@@ -130,26 +114,34 @@ public class ExtractEmbeddedFiles
         }
     }
 
-    private static void extractFiles(Map<String,COSObjectable> names, String filePath) 
+    private static void extractFiles(Map<String, PDComplexFileSpecification> names, String filePath) 
             throws IOException
     {
-        for (String filename : names.keySet())
+        for (Entry<String, PDComplexFileSpecification> entry : names.entrySet())
         {
-            PDComplexFileSpecification fileSpec = (PDComplexFileSpecification)names.get(filename);
+            String filename = entry.getKey();
+            PDComplexFileSpecification fileSpec = entry.getValue();
             PDEmbeddedFile embeddedFile = getEmbeddedFile(fileSpec);
             extractFile(filePath, filename, embeddedFile);
         }
     }
 
     private static void extractFile(String filePath, String filename, PDEmbeddedFile embeddedFile)
-            throws IOException, FileNotFoundException
+            throws IOException
     {
         String embeddedFilename = filePath + filename;
         File file = new File(filePath + filename);
         System.out.println("Writing " + embeddedFilename);
-        FileOutputStream fos = new FileOutputStream(file);
-        fos.write(embeddedFile.getByteArray());
-        fos.close();
+        FileOutputStream fos = null;
+        try
+        {
+            fos = new FileOutputStream(file);
+            fos.write(embeddedFile.getByteArray());
+        }
+        finally
+        {
+            IOUtils.closeQuietly(fos);
+        }
     }
     
     private static PDEmbeddedFile getEmbeddedFile(PDComplexFileSpecification fileSpec )

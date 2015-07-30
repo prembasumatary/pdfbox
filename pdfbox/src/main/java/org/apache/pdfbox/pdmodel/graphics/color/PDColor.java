@@ -34,12 +34,6 @@ import java.util.Arrays;
  */
 public final class PDColor
 {
-    /** The color black in the DeviceGray color space. */
-    public static PDColor DEVICE_GRAY_BLACK = new PDColor(new float[] { 0 }, PDDeviceGray.INSTANCE);
-
-    /** A pattern which leaves no marks on the page. */
-    public static PDColor EMPTY_PATTERN = new PDColor(new float[] { }, null);
-
     private final float[] components;
     private final COSName patternName;
     private final PDColorSpace colorSpace;
@@ -51,9 +45,9 @@ public final class PDColor
      */
     public PDColor(COSArray array, PDColorSpace colorSpace)
     {
-        if (array.get(array.size() - 1) instanceof COSName)
+        if (array.size() > 0 && array.get(array.size() - 1) instanceof COSName)
         {
-            // color components (optional)
+            // color components (optional), for the color of an uncoloured tiling pattern
             components = new float[array.size() - 1];
             for (int i = 0; i < array.size() - 1; i++)
             {
@@ -159,14 +153,17 @@ public final class PDColor
     }
 
     /**
-     * Returns this color value as a COS array
-     * @return the color value as a COS array
+     * Returns the color component values as a COS array
+     * @return the color component values as a COS array
      */
     public COSArray toCOSArray()
     {
         COSArray array = new COSArray();
         array.setFloatArray(components);
-        array.add(patternName);
+        if (patternName != null)
+        {
+            array.add(patternName);
+        }
         return array;
     }
 

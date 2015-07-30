@@ -16,26 +16,27 @@
  */
 package org.apache.pdfbox.tools.gui;
 
+import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSName;
 
 
 /**
  * This is a simple class that will contain a key and a value.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.3 $
+ * @author Ben Litchfield
  */
 public class MapEntry
 {
-    private Object key;
-    private Object value;
+    private COSName key;
+    private COSBase value;
+    private COSBase item;
 
     /**
      * Get the key for this entry.
      *
      * @return The entry's key.
      */
-    public Object getKey()
+    public COSName getKey()
     {
         return key;
     }
@@ -45,7 +46,7 @@ public class MapEntry
      *
      * @param k the new key for this entry.
      */
-    public void setKey(Object k)
+    public void setKey(COSName k)
     {
         key = k;
     }
@@ -55,9 +56,19 @@ public class MapEntry
      *
      * @return The value for this entry.
      */
-    public Object getValue()
+    public COSBase getValue()
     {
         return value;
+    }
+
+    /**
+     * This will get the value for this entry.
+     *
+     * @return The value for this entry.
+     */
+    public COSBase getItem()
+    {
+        return item;
     }
 
     /**
@@ -65,9 +76,19 @@ public class MapEntry
      *
      * @param val the new value for this entry.
      */
-    public void setValue(Object val)
+    public void setValue(COSBase val)
     {
         this.value = val;
+    }
+
+    /**
+     * This will set the value for this entry.
+     *
+     * @param val the new value for this entry.
+     */
+    public void setItem(COSBase val)
+    {
+        this.item = val;
     }
 
     /**
@@ -75,17 +96,13 @@ public class MapEntry
      *
      * @return A string representation of this class.
      */
+    @Override
     public String toString()
     {
-        String retval = null;
-        if( key instanceof COSName )
+        if (key != null)
         {
-            retval = ((COSName)key).getName();
+            return key.getName();
         }
-        else
-        {
-            retval = "" +key;
-        }
-        return retval;
+        return "(null)";
     }
 }

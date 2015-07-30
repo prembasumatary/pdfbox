@@ -25,8 +25,7 @@ import java.awt.FlowLayout;
 /**
  * A panel to display at the bottom of the window for status and other stuff.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.2 $
+ * @author Ben Litchfield
  */
 public class ReaderBottomPanel extends JPanel
 {
@@ -38,35 +37,23 @@ public class ReaderBottomPanel extends JPanel
      */
     public ReaderBottomPanel()
     {
-        super();
-        initialize();
-    }
-
-    /**
-     * This method initializes this.
-     */
-    private void initialize()
-    {
-        FlowLayout flowLayout1 = new FlowLayout();
-        this.setLayout(flowLayout1);
+        FlowLayout flowLayout = new FlowLayout();
+        this.setLayout(flowLayout);
         this.setComponentOrientation(java.awt.ComponentOrientation.LEFT_TO_RIGHT);
-        this.setPreferredSize( new Dimension( 1000, 20 ) );
-        flowLayout1.setAlignment(java.awt.FlowLayout.LEFT);
-        this.add(getStatusLabel(), null);
+        this.setPreferredSize(new Dimension(1000, 20));
+        flowLayout.setAlignment(FlowLayout.LEFT);
+        statusLabel = new JLabel();
+        statusLabel.setText("Ready");
+        this.add(statusLabel, null);
     }
 
     /**
-     * This method initializes status label.
+     * Return the status label.
      *
-     * @return javax.swing.JLabel
+     * @return JLabel The status label.
      */
     public JLabel getStatusLabel()
     {
-        if (statusLabel == null)
-        {
-            statusLabel = new JLabel();
-            statusLabel.setText("Ready");
-        }
         return statusLabel;
     }
- }
+}

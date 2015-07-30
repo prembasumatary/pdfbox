@@ -31,9 +31,13 @@ import static org.apache.pdfbox.tools.imageio.MetaUtil.debugLogMetadata;
  * Used by ImageIOUtil to write TIFF files.
  * @author Tilman Hausherr
  */
-class TIFFUtil
+final class TIFFUtil
 {
     private static final Log LOG = LogFactory.getLog(TIFFUtil.class);
+
+    private TIFFUtil()
+    {
+    }    
 
     /**
      * Sets the ImageIO parameter compression type based on the given image.
@@ -65,8 +69,10 @@ class TIFFUtil
      * @param image buffered image which will be written
      * @param metadata ImageIO metadata
      * @param dpi image dots per inch
+     * @throws IIOInvalidTreeException if something goes wrong
      */
-    public static void updateMetadata(IIOMetadata metadata, BufferedImage image, int dpi)
+    static void updateMetadata(IIOMetadata metadata, BufferedImage image, int dpi)
+            throws IIOInvalidTreeException
     {
         debugLogMetadata(metadata, SUN_TIFF_FORMAT);
 
@@ -106,16 +112,8 @@ class TIFFUtil
             ifd.appendChild(createShortField(262, "PhotometricInterpretation", 0));
         }
         
-        try
-        {
-            metadata.mergeTree(SUN_TIFF_FORMAT, root);
-        }
-        catch (IIOInvalidTreeException e)
-        {
-            // should never happen
-            throw new RuntimeException(e);
-        }
-
+        metadata.mergeTree(SUN_TIFF_FORMAT, root);
+        
         debugLogMetadata(metadata, SUN_TIFF_FORMAT);
     }
 

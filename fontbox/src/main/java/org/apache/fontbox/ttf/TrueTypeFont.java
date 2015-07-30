@@ -16,15 +16,16 @@
  */
 package org.apache.fontbox.ttf;
 
-import java.awt.geom.AffineTransform;
 import java.awt.geom.GeneralPath;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.Map;
+import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
-
-import org.apache.fontbox.encoding.Encoding;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.apache.fontbox.FontBoxFont;
 import org.apache.fontbox.util.BoundingBox;
 
 /**
@@ -32,14 +33,13 @@ import org.apache.fontbox.util.BoundingBox;
  * 
  * @author Ben Litchfield
  */
-public class TrueTypeFont implements Type1Equivalent
+public class TrueTypeFont implements FontBoxFont, Closeable
 {
     private float version;
     private int numberOfGlyphs = -1;
     private int unitsPerEm = -1;
-    private int[] advanceWidths = null;
     protected Map<String,TTFTable> tables = new HashMap<String,TTFTable>();
-    private TTFDataStream data;
+    private final TTFDataStream data;
     private Map<String, Integer> postScriptNames;
     
     /**
@@ -52,11 +52,7 @@ public class TrueTypeFont implements Type1Equivalent
         data = fontData;
     }
     
-    /**
-     * Close the underlying resources.
-     * 
-     * @throws IOException If there is an error closing the resources.
-     */
+    @Override
     public void close() throws IOException
     {
         data.close();
@@ -108,11 +104,31 @@ public class TrueTypeFont implements Type1Equivalent
     {
         return tables;
     }
+
+    /**
+     * Returns the war bytes of the given table.
+     * @param table the table to read.
+     * @throws IOException if there was an error accessing the table.
+     */
+    public synchronized byte[] getTableBytes(TTFTable table) throws IOException
+    {
+        // save current position
+        long currentPosition = data.getCurrentPosition();
+        data.seek(table.getOffset());
+
+        // read all data
+        byte[] bytes = data.read((int)table.getLength());
+
+        // restore current position
+        data.seek(currentPosition);
+        return bytes;
+    }
     
     /**
      * This will get the naming table for the true type font.
      * 
      * @return The naming table.
+     * @throws IOException if there was an error reading the table.
      */
     public synchronized NamingTable getNaming() throws IOException
     {
@@ -128,6 +144,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Get the postscript table for this TTF.
      * 
      * @return The postscript table.
+     * @throws IOException if there was an error reading the table.
      */
     public synchronized PostScriptTable getPostScript() throws IOException
     {
@@ -143,6 +160,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Get the OS/2 table for this TTF.
      * 
      * @return The OS/2 table.
+     * @throws IOException if there was an error reading the table.
      */
     public synchronized OS2WindowsMetricsTable getOS2Windows() throws IOException
     {
@@ -158,6 +176,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Get the maxp table for this TTF.
      * 
      * @return The maxp table.
+     * @throws IOException if there was an error reading the table.
      */
     public synchronized MaximumProfileTable getMaximumProfile() throws IOException
     {
@@ -173,6 +192,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Get the head table for this TTF.
      * 
      * @return The head table.
+     * @throws IOException if there was an error reading the table.
      */
     public synchronized HeaderTable getHeader() throws IOException
     {
@@ -188,6 +208,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Get the hhea table for this TTF.
      * 
      * @return The hhea table.
+     * @throws IOException if there was an error reading the table.
      */
     public synchronized HorizontalHeaderTable getHorizontalHeader() throws IOException
     {
@@ -203,6 +224,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Get the hmtx table for this TTF.
      * 
      * @return The hmtx table.
+     * @throws IOException if there was an error reading the table.
      */
     public synchronized HorizontalMetricsTable getHorizontalMetrics() throws IOException
     {
@@ -218,6 +240,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Get the loca table for this TTF.
      * 
      * @return The loca table.
+     * @throws IOException if there was an error reading the table.
      */
     public synchronized IndexToLocationTable getIndexToLocation() throws IOException
     {
@@ -233,6 +256,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Get the glyf table for this TTF.
      * 
      * @return The glyf table.
+     * @throws IOException if there was an error reading the table.
      */
     public synchronized GlyphTable getGlyph() throws IOException
     {
@@ -248,7 +272,8 @@ public class TrueTypeFont implements Type1Equivalent
      * Get the "cmap" table for this TTF.
      * 
      * @return The "cmap" table.
-     */
+    * @throws IOException if there was an error reading the table.
+      */
     public synchronized CmapTable getCmap() throws IOException
     {
         CmapTable cmap = (CmapTable)tables.get( CmapTable.TAG );
@@ -257,6 +282,70 @@ public class TrueTypeFont implements Type1Equivalent
             readTable(cmap);
         }
         return cmap;
+    }
+    
+    /**
+     * Get the vhea table for this TTF.
+     * 
+     * @return The vhea table.
+     * @throws IOException if there was an error reading the table.
+     */
+    public synchronized VerticalHeaderTable getVerticalHeader() throws IOException
+    {
+        VerticalHeaderTable verticalHeader = (VerticalHeaderTable)tables.get( VerticalHeaderTable.TAG );
+        if (verticalHeader != null && !verticalHeader.getInitialized())
+        {
+            readTable(verticalHeader);
+        }
+        return verticalHeader;
+    }
+    
+    /**
+     * Get the vmtx table for this TTF.
+     * 
+     * @return The vmtx table.
+     * @throws IOException if there was an error reading the table.
+     */
+    public synchronized VerticalMetricsTable getVerticalMetrics() throws IOException
+    {
+        VerticalMetricsTable verticalMetrics = (VerticalMetricsTable)tables.get( VerticalMetricsTable.TAG );
+        if (verticalMetrics != null && !verticalMetrics.getInitialized())
+        {
+            readTable(verticalMetrics);
+        }
+        return verticalMetrics;
+    }
+    
+    /**
+     * Get the VORG table for this TTF.
+     * 
+     * @return The VORG table.
+     * @throws IOException if there was an error reading the table.
+     */
+    public synchronized VerticalOriginTable getVerticalOrigin() throws IOException
+    {
+        VerticalOriginTable verticalOrigin = (VerticalOriginTable)tables.get( VerticalOriginTable.TAG );
+        if (verticalOrigin != null && !verticalOrigin.getInitialized())
+        {
+            readTable(verticalOrigin);
+        }
+        return verticalOrigin;
+    }
+    
+    /**
+     * Get the "kern" table for this TTF.
+     * 
+     * @return The "kern" table.
+     * @throws IOException if there was an error reading the table.
+     */
+    public synchronized KerningTable getKerning() throws IOException
+    {
+        KerningTable kerning = (KerningTable)tables.get( KerningTable.TAG );
+        if (kerning != null && !kerning.getInitialized())
+        {
+            readTable(kerning);
+        }
+        return kerning;
     }
     
     /**
@@ -277,6 +366,8 @@ public class TrueTypeFont implements Type1Equivalent
      * Read the given table if necessary. Package-private, used by TTFParser only.
      * 
      * @param table the table to be initialized
+     * 
+     * @throws IOException if there was an error reading the table.
      */
     void readTable(TTFTable table) throws IOException
     {
@@ -292,6 +383,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Returns the number of glyphs (MaximuProfile.numGlyphs).
      * 
      * @return the number of glyphs
+     * @throws IOException if there was an error reading the table.
      */
     public int getNumberOfGlyphs() throws IOException
     {
@@ -315,6 +407,7 @@ public class TrueTypeFont implements Type1Equivalent
      * Returns the units per EM (Header.unitsPerEm).
      * 
      * @return units per EM
+     * @throws IOException if there was an error reading the table.
      */
     public int getUnitsPerEm() throws IOException
     {
@@ -339,31 +432,40 @@ public class TrueTypeFont implements Type1Equivalent
      * 
      * @param gid the GID
      * @return the width
+     * @throws IOException if there was an error reading the metrics table.
      */
     public int getAdvanceWidth(int gid) throws IOException
     {
-        if (advanceWidths == null)
+        HorizontalMetricsTable hmtx = getHorizontalMetrics();
+        if (hmtx != null)
         {
-            HorizontalMetricsTable hmtx = getHorizontalMetrics();
-            if (hmtx != null)
-            {
-                advanceWidths = hmtx.getAdvanceWidth();
-            }
-            else
-            {
-                // this should never happen
-                advanceWidths = new int[]{250};
-            }
-        }
-        if (advanceWidths.length > gid)
-        {
-            return advanceWidths[gid];
+            return hmtx.getAdvanceWidth(gid);
         }
         else
         {
-            // monospaced fonts may not have a width for every glyph
-            // the last one is for subsequent glyphs
-            return advanceWidths[advanceWidths.length-1];
+            // this should never happen
+            return 250;
+        }
+    }
+
+    /**
+     * Returns the height for the given GID.
+     * 
+     * @param gid the GID
+     * @return the height
+     * @throws IOException if there was an error reading the metrics table.
+     */
+    public int getAdvanceHeight(int gid) throws IOException
+    {
+        VerticalMetricsTable vmtx = getVerticalMetrics();
+        if (vmtx != null)
+        {
+            return vmtx.getAdvanceHeight(gid);
+        }
+        else
+        {
+            // this should never happen
+            return 250;
         }
     }
 
@@ -400,30 +502,128 @@ public class TrueTypeFont implements Type1Equivalent
     }
 
     /**
+     * Returns the best Unicode from the font (the most general). The PDF spec says that "The means
+     * by which this is accomplished are implementation-dependent."
+     * 
+     * @throws IOException if the font could not be read
+     */
+    public CmapSubtable getUnicodeCmap() throws IOException
+    {
+        return getUnicodeCmap(true);
+    }
+
+    /**
+     * Returns the best Unicode from the font (the most general). The PDF spec says that "The means
+     * by which this is accomplished are implementation-dependent."
+     * 
+     * @param isStrict False if we allow falling back to any cmap, even if it's not Unicode.
+     * @throws IOException if the font could not be read, or there is no Unicode cmap
+     */
+    public CmapSubtable getUnicodeCmap(boolean isStrict) throws IOException
+    {
+        CmapTable cmapTable = getCmap();
+        if (cmapTable == null)
+        {
+            return null;
+        }
+
+        CmapSubtable cmap = cmapTable.getSubtable(CmapTable.PLATFORM_UNICODE,
+                                                  CmapTable.ENCODING_UNICODE_2_0_FULL);
+        if (cmap == null)
+        {
+            cmap = cmapTable.getSubtable(CmapTable.PLATFORM_UNICODE,
+                                         CmapTable.ENCODING_UNICODE_2_0_BMP);
+        }
+        if (cmap == null)
+        {
+            cmap = cmapTable.getSubtable(CmapTable.PLATFORM_WINDOWS,
+                                         CmapTable.ENCODING_WIN_UNICODE_BMP);
+        }
+        if (cmap == null)
+        {
+            // Microsoft's "Recommendations for OpenType Fonts" says that "Symbol" encoding
+            // actually means "Unicode, non-standard character set"
+            cmap = cmapTable.getSubtable(CmapTable.PLATFORM_WINDOWS,
+                                         CmapTable.ENCODING_WIN_SYMBOL);
+        }
+        if (cmap == null)
+        {
+            if (isStrict)
+            {
+                throw new IOException("The TrueType font does not contain a Unicode cmap");
+            }
+            else
+            {
+                // fallback to the first cmap (may not be Unicode, so may produce poor results)
+                cmap = cmapTable.getCmaps()[0];
+            }
+        }
+        return cmap;
+    }
+
+    /**
      * Returns the GID for the given PostScript name, if the "post" table is present.
+     * @param name the PostScript name.
      */
     public int nameToGID(String name) throws IOException
     {
+        // look up in 'post' table
         readPostScriptNames();
-
         Integer gid = postScriptNames.get(name);
-        if (gid == null || gid < 0 || gid >= getMaximumProfile().getNumGlyphs())
+        if (gid != null && gid > 0 && gid < getMaximumProfile().getNumGlyphs())
         {
-            return 0;
+            return gid;
         }
-        return gid;
+
+        // look up in 'cmap'
+        int uni = parseUniName(name);
+        if (uni > -1)
+        {
+            CmapSubtable cmap = getUnicodeCmap(false);
+            return cmap.getGlyphId(uni);
+        }
+        
+        return 0;
     }
 
+    /**
+     * Parses a Unicode PostScript name in the format uniXXXX.
+     */
+    private int parseUniName(String name) throws IOException
+    {
+        if (name.startsWith("uni") && name.length() == 7)
+        {
+            int nameLength = name.length();
+            StringBuilder uniStr = new StringBuilder();
+            try
+            {
+                for (int chPos = 3; chPos + 4 <= nameLength; chPos += 4)
+                {
+                    int codePoint = Integer.parseInt(name.substring(chPos, chPos + 4), 16);
+                    if (codePoint <= 0xD7FF || codePoint >= 0xE000) // disallowed code area
+                    {
+                        uniStr.append((char) codePoint);
+                    }
+                }
+                String unicode = uniStr.toString();
+                if (unicode.length() == 0)
+                {
+                    return -1;
+                }
+                return unicode.codePointAt(0);
+            }
+            catch (NumberFormatException e)
+            {
+                return -1;
+            }
+        }
+        return -1;
+    }
+    
     @Override
     public GeneralPath getPath(String name) throws IOException
     {
-        readPostScriptNames();
-
         int gid = nameToGID(name);
-        if (gid < 0 || gid >= getMaximumProfile().getNumGlyphs())
-        {
-            gid = 0;
-        }
 
         // some glyphs have no outlines (e.g. space, table, newline)
         GlyphData glyph = getGlyph().getGlyph(gid);
@@ -433,46 +633,22 @@ public class TrueTypeFont implements Type1Equivalent
         }
         else
         {
-            GeneralPath path = glyph.getPath();
-
-            // scale to 1000upem, per PostScript convention
-            float scale = 1000f / getUnitsPerEm();
-            AffineTransform atScale = AffineTransform.getScaleInstance(scale, scale);
-            path.transform(atScale);
-
-            return path;
+            // must scaled by caller using FontMatrix
+            return glyph.getPath();
         }
     }
 
     @Override
     public float getWidth(String name) throws IOException
     {
-        readPostScriptNames();
-
         Integer gid = nameToGID(name);
-
-        int width = getAdvanceWidth(gid);
-        int unitsPerEM = getUnitsPerEm();
-        if (unitsPerEM != 1000)
-        {
-            width *= 1000f / unitsPerEM;
-        }
-        return width;
+        return getAdvanceWidth(gid);
     }
 
     @Override
     public boolean hasGlyph(String name) throws IOException
     {
-        readPostScriptNames();
-
-        Integer gid = postScriptNames.get(name);
-        return !(gid == null || gid < 0 || gid >= getMaximumProfile().getNumGlyphs());
-    }
-
-    @Override
-    public Encoding getEncoding()
-    {
-        return null;
+        return nameToGID(name) != 0;
     }
 
     @Override
@@ -484,6 +660,13 @@ public class TrueTypeFont implements Type1Equivalent
         short yMax = getHeader().getYMax();
         float scale = 1000f / getUnitsPerEm();
         return new BoundingBox(xMin * scale, yMin * scale, xMax * scale, yMax * scale);
+    }
+
+    @Override
+    public List<Number> getFontMatrix() throws IOException
+    {
+        float scale = 1000f / getUnitsPerEm();
+        return Arrays.<Number>asList(0.001f * scale, 0, 0, 0.001f * scale, 0, 0);
     }
 
     @Override

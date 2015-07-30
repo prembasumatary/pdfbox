@@ -21,17 +21,6 @@
 
 package org.apache.pdfbox.preflight.annotation;
 
-import static org.apache.pdfbox.preflight.PreflightConfiguration.ACTIONS_PROCESS;
-import static org.apache.pdfbox.preflight.PreflightConfiguration.GRAPHIC_PROCESS;
-import static org.apache.pdfbox.preflight.PreflightConstants.ANNOT_DICTIONARY_VALUE_SUBTYPE_POPUP;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_FORBIDDEN_COLOR;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_FORBIDDEN_FLAG;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_INVALID_AP_CONTENT;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_INVALID_CA;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_MISSING_AP_N_CONTENT;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_MISSING_FIELDS;
-import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_SYNTAX_DICT_INVALID;
-
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSDocument;
@@ -47,13 +36,25 @@ import org.apache.pdfbox.preflight.graphic.ICCProfileWrapper;
 import org.apache.pdfbox.preflight.utils.COSUtils;
 import org.apache.pdfbox.preflight.utils.ContextHelper;
 
+
+import static org.apache.pdfbox.preflight.PreflightConfiguration.ACTIONS_PROCESS;
+import static org.apache.pdfbox.preflight.PreflightConfiguration.GRAPHIC_PROCESS;
+import static org.apache.pdfbox.preflight.PreflightConstants.ANNOT_DICTIONARY_VALUE_SUBTYPE_POPUP;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_FORBIDDEN_COLOR;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_FORBIDDEN_FLAG;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_INVALID_AP_CONTENT;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_INVALID_CA;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_MISSING_AP_N_CONTENT;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_ANNOT_MISSING_FIELDS;
+import static org.apache.pdfbox.preflight.PreflightConstants.ERROR_SYNTAX_DICT_INVALID;
+
 public abstract class AnnotationValidator
 {
 
-    protected AnnotationValidatorFactory annotFact = null;
+    private AnnotationValidatorFactory annotFact = null;
 
     protected PreflightContext ctx = null;
-    protected COSDocument cosDocument = null;
+    private COSDocument cosDocument = null;
     /**
      * COSDictionary of the annotation
      */
@@ -107,7 +108,7 @@ public abstract class AnnotationValidator
      */
     protected boolean checkCA()
     {
-        COSBase ca = this.pdAnnot.getDictionary().getItem(COSName.CA);
+        COSBase ca = this.pdAnnot.getCOSObject().getItem(COSName.CA);
         if (ca != null)
         {
             float caf = COSUtils.getAsFloat(ca, cosDocument);
@@ -129,14 +130,11 @@ public abstract class AnnotationValidator
      */
     protected boolean checkColors() throws ValidationException
     {
-        if (this.pdAnnot.getColour() != null)
+        if (this.pdAnnot.getColor() != null && !searchRGBProfile())
         {
-            if (!searchRGBProfile())
-            {
-                ctx.addValidationError(new ValidationError(ERROR_ANNOT_FORBIDDEN_COLOR,
-                        "Annotation uses a Color profile which isn't the same than the profile contained by the OutputIntent"));
-                return false;
-            }
+            ctx.addValidationError(new ValidationError(ERROR_ANNOT_FORBIDDEN_COLOR,
+                    "Annotation uses a Color profile which isn't the same than the profile contained by the OutputIntent"));
+            return false;
         }
         return true;
     }
@@ -199,7 +197,7 @@ public abstract class AnnotationValidator
 
                 // Appearance stream is a XObjectForm, check it.
                 ContextHelper.validateElement(ctx, new PDFormXObject(
-                        new PDStream(COSUtils.getAsStream(apn, cosDocument)), "N"),
+                        new PDStream(COSUtils.getAsStream(apn, cosDocument))),
                         GRAPHIC_PROCESS);
             }
         } // else ok, nothing to check,this field is optional
@@ -224,6 +222,7 @@ public abstract class AnnotationValidator
      * This method validates the Popup entry. This entry shall contain an other Annotation. This annotation is validated
      * with the right AnnotationValidator.
      *
+     * @return true if the popup entry is valid, false if not.
      * @throws ValidationException
      */
     protected boolean checkPopup() throws ValidationException
@@ -252,14 +251,14 @@ public abstract class AnnotationValidator
      */
     public boolean validate() throws ValidationException
     {
-        boolean isValide = checkMandatoryFields();
-        isValide = isValide && checkFlags();
-        isValide = isValide && checkColors();
-        isValide = isValide && checkAP();
-        isValide = isValide && checkCA();
-        isValide = isValide && checkActions();
-        isValide = isValide && checkPopup();
-        return isValide;
+        boolean isValid = checkMandatoryFields();
+        isValid = checkFlags() && isValid;
+        isValid = checkColors() && isValid;
+        isValid = checkAP() && isValid;
+        isValid = checkCA() && isValid;
+        isValid = checkActions() && isValid;
+        isValid = checkPopup() && isValid;
+        return isValid;
     }
 
     /**

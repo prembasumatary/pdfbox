@@ -19,32 +19,34 @@ package org.apache.pdfbox.contentstream.operator;
 import org.apache.pdfbox.cos.COSDictionary;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * An Operator in a PDF content stream.
  *
  * @author Ben Litchfield
  */
-public class Operator
+public final class Operator
 {
-    private String theOperator;
+    private final String theOperator;
     private byte[] imageData;
     private COSDictionary imageParameters;
 
     /** map for singleton operator objects; use {@link ConcurrentHashMap} for better scalability with multiple threads */
-    private final static ConcurrentHashMap<String,Operator> operators = new ConcurrentHashMap<String, Operator>();
+    private static final ConcurrentMap<String,Operator> operators = new ConcurrentHashMap<String, Operator>();
 
     /**
      * Constructor.
      *
      * @param aOperator The operator that this object will represent.
+     * @throws IllegalArgumentException if the operator starts with "/".
      */
     private Operator(String aOperator)
     {
         theOperator = aOperator;
         if( aOperator.startsWith( "/" ) )
         {
-            throw new RuntimeException( "Operators are not allowed to start with / '" + aOperator + "'" );
+            throw new IllegalArgumentException( "Operators are not allowed to start with / '" + aOperator + "'" );
         }
     }
 
@@ -57,7 +59,7 @@ public class Operator
      */
     public static Operator getOperator( String operator )
     {
-        Operator operation = null;
+        Operator operation;
         if( operator.equals( "ID" ) || operator.equals( "BI" ) )
         {
             //we can't cache the ID operators.
@@ -96,6 +98,7 @@ public class Operator
      *
      * @return A string rep of this class.
      */
+    @Override
     public String toString()
     {
         return "PDFOperator{" + theOperator + "}";

@@ -18,12 +18,12 @@ package org.apache.pdfbox.examples.util;
 
 import org.apache.pdfbox.pdfparser.PDFStreamParser;
 import org.apache.pdfbox.pdfwriter.ContentStreamWriter;
-
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.contentstream.operator.Operator;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,8 +32,7 @@ import java.util.List;
  *
  * Usage: java org.apache.pdfbox.examples.util.RemoveAllText &lt;input-pdf&gt; &lt;output-pdf&gt;
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.2 $
+ * @author Ben Litchfield
  */
 public class RemoveAllText
 {
@@ -63,7 +62,7 @@ public class RemoveAllText
             PDDocument document = null;
             try
             {
-                document = PDDocument.load( args[0] );
+                document = PDDocument.load( new File(args[0]) );
                 if( document.isEncrypted() )
                 {
                     System.err.println( "Error: Encrypted documents are not supported for this example." );
@@ -71,13 +70,12 @@ public class RemoveAllText
                 }
                 for( PDPage page : document.getPages() )
                 {
-                    PDFStreamParser parser = new PDFStreamParser(page.getStream());
+                    PDFStreamParser parser = new PDFStreamParser(page);
                     parser.parse();
-                    List tokens = parser.getTokens();
-                    List newTokens = new ArrayList();
-                    for( int j=0; j<tokens.size(); j++)
+                    List<Object> tokens = parser.getTokens();
+                    List<Object> newTokens = new ArrayList<Object>();
+                    for (Object token : tokens)
                     {
-                        Object token = tokens.get( j );
                         if( token instanceof Operator)
                         {
                             Operator op = (Operator)token;
@@ -89,7 +87,6 @@ public class RemoveAllText
                             }
                         }
                         newTokens.add( token );
-
                     }
                     PDStream newContents = new PDStream( document );
                     ContentStreamWriter writer = new ContentStreamWriter( newContents.createOutputStream() );

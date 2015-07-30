@@ -16,35 +16,32 @@
  */
 package org.apache.pdfbox.examples.util;
 
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.PDPage;
-import org.apache.pdfbox.pdmodel.common.PDStream;
-import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
-import org.apache.pdfbox.util.PDFTextStripper;
-import org.apache.pdfbox.text.TextPosition;
-
+import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
-
-import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.util.List;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 
 /**
  * This is an example on how to get some x/y coordinates of text.
  *
  * Usage: java org.apache.pdfbox.examples.util.PrintTextLocations &lt;input-pdf&gt;
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.7 $
+ * @author Ben Litchfield
  */
 public class PrintTextLocations extends PDFTextStripper
 {
     /**
-     * Default constructor.
+     * Instantiate a new PDFTextStripper object.
      *
-     * @throws IOException If there is an error loading text stripper properties.
+     * @throws IOException If there is an error loading the properties.
      */
     public PrintTextLocations() throws IOException
     {
-        super.setSortByPosition( true );
     }
 
     /**
@@ -65,32 +62,15 @@ public class PrintTextLocations extends PDFTextStripper
             PDDocument document = null;
             try
             {
-                document = PDDocument.load( args[0] );
-                if( document.isEncrypted() )
-                {
-                    try
-                    {
-                        StandardDecryptionMaterial sdm = new StandardDecryptionMaterial("");
-                        document.openProtection(sdm);
-                    }
-                    catch( InvalidPasswordException e )
-                    {
-                        System.err.println( "Error: Document is encrypted with a password." );
-                        System.exit( 1 );
-                    }
-                }
-                PrintTextLocations printer = new PrintTextLocations();
-                int pageNum = 0;
-                for( PDPage page : document.getPages() )
-                {
-                    pageNum++;
-                    System.out.println( "Processing page: " + pageNum );
-                    PDStream contents = page.getStream();
-                    if( contents != null )
-                    {
-                        printer.processPage(page);
-                    }
-                }
+                document = PDDocument.load( new File(args[0]) );
+
+                PDFTextStripper stripper = new PrintTextLocations();
+                stripper.setSortByPosition( true );
+                stripper.setStartPage( 0 );
+                stripper.setEndPage( document.getNumberOfPages() );
+
+                Writer dummy = new OutputStreamWriter(new ByteArrayOutputStream());
+                stripper.writeText(document, dummy);
             }
             finally
             {
@@ -103,20 +83,21 @@ public class PrintTextLocations extends PDFTextStripper
     }
 
     /**
-     * A method provided as an event interface to allow a subclass to perform
-     * some specific functionality when text needs to be processed.
-     *
-     * @param text The text to be processed
+     * Override the default functionality of PDFTextStripper.
      */
-    protected void processTextPosition( TextPosition text )
+    @Override
+    protected void writeString(String string, List<TextPosition> textPositions) throws IOException
     {
-        System.out.println( "String[" + text.getXDirAdj() + "," +
-                text.getYDirAdj() + " fs=" + text.getFontSize() + " xscale=" +
-                text.getXScale() + " height=" + text.getHeightDir() + " space=" +
-                text.getWidthOfSpace() + " width=" +
-                text.getWidthDirAdj() + "]" + text.getUnicode() );
+        for (TextPosition text : textPositions)
+        {
+            System.out.println( "String[" + text.getXDirAdj() + "," +
+                    text.getYDirAdj() + " fs=" + text.getFontSize() + " xscale=" +
+                    text.getXScale() + " height=" + text.getHeightDir() + " space=" +
+                    text.getWidthOfSpace() + " width=" +
+                    text.getWidthDirAdj() + "]" + text.getUnicode() );
+        }
     }
-
+    
     /**
      * This will print the usage for this document.
      */
@@ -124,5 +105,4 @@ public class PrintTextLocations extends PDFTextStripper
     {
         System.err.println( "Usage: java org.apache.pdfbox.examples.pdmodel.PrintTextLocations <input-pdf>" );
     }
-
 }

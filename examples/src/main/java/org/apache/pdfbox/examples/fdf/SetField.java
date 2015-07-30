@@ -16,19 +16,22 @@
  */
 package org.apache.pdfbox.examples.fdf;
 
+import java.io.File;
 import java.io.IOException;
-
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDDocumentCatalog;
-import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
-import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
-import org.apache.pdfbox.pdmodel.interactive.form.PDFieldTreeNode;
+import org.apache.pdfbox.pdmodel.interactive.form.PDCheckbox;
+import org.apache.pdfbox.pdmodel.interactive.form.PDComboBox;
+import org.apache.pdfbox.pdmodel.interactive.form.PDField;
+import org.apache.pdfbox.pdmodel.interactive.form.PDListBox;
+import org.apache.pdfbox.pdmodel.interactive.form.PDRadioButton;
+import org.apache.pdfbox.pdmodel.interactive.form.PDTextField;
 
 /**
  * This example will take a PDF document and set a FDF field in it.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
+ * @author Ben Litchfield
  *
  */
 public class SetField
@@ -46,16 +49,34 @@ public class SetField
     {
         PDDocumentCatalog docCatalog = pdfDocument.getDocumentCatalog();
         PDAcroForm acroForm = docCatalog.getAcroForm();
-        PDFieldTreeNode field = acroForm.getField(name);
+        PDField field = acroForm.getField(name);
         if (field != null)
         {
-            field.setValue(value);
+            if (field instanceof PDCheckbox)
+            {
+                ((PDCheckbox) field).setValue("Yes");
+            }
+            else if (field instanceof PDComboBox)
+            {
+                ((PDComboBox) field).setValue(value);
+            }
+            else if (field instanceof PDListBox)
+            {
+                ((PDListBox) field).setValue(value);
+            }
+            else if (field instanceof PDRadioButton)
+            {
+                ((PDRadioButton) field).setValue(value);
+            }
+            else if (field instanceof PDTextField)
+            {
+                ((PDTextField) field).setValue(value);
+            } 
         }
         else
         {
             System.err.println("No field found with name:" + name);
         }
-
     }
 
     /**
@@ -85,21 +106,7 @@ public class SetField
             else
             {
                 SetField example = new SetField();
-
-                pdf = PDDocument.load(args[0]);
-                if (pdf.isEncrypted())
-                {
-                    try
-                    {
-                        StandardDecryptionMaterial sdm = new StandardDecryptionMaterial("");
-                        pdf.openProtection(sdm);
-                    }
-                    catch (InvalidPasswordException e)
-                    {
-                        System.err.println("Error: The document is encrypted.");
-                        usage();
-                    }
-                }
+                pdf = PDDocument.load(new File(args[0]));
                 example.setField(pdf, args[1], args[2]);
                 pdf.save(args[0]);
             }

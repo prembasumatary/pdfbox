@@ -40,13 +40,13 @@ import java.util.List;
  * <li>RelativeColorimetric
  * </UL>
  */
-public class RenderingIntents
+public final class RenderingIntents
 {
-    private static List<String> RENDERING_INTENTS;
+    private static final List<String> RENDERING_INTENTS;
 
     static
     {
-        ArrayList<String> al = new ArrayList<String>(4);
+        List<String> al = new ArrayList<String>(4);
         al.add(RENDERING_INTENT_REL_COLOR);
         al.add(RENDERING_INTENT_ABS_COLOR);
         al.add(RENDERING_INTENT_PERCEPTUAL);
@@ -54,7 +54,11 @@ public class RenderingIntents
         RENDERING_INTENTS = Collections.unmodifiableList(al);
     }
 
-    public static boolean contains(Object riArg)
+    private RenderingIntents()
+    {
+    }
+
+    public static boolean contains(String riArg)
     {
         return RENDERING_INTENTS.contains(riArg);
     }

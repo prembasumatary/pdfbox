@@ -16,11 +16,11 @@
  */
 package org.apache.pdfbox.examples.pdmodel;
 
+import java.io.File;
 import java.util.List;
 
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
-
 import org.apache.pdfbox.pdmodel.interactive.action.PDAction;
 import org.apache.pdfbox.pdmodel.interactive.action.PDActionURI;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotation;
@@ -32,8 +32,7 @@ import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink;
  * will only replace the URL that the text refers to and not the text
  * itself.
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.2 $
+ * @author Ben Litchfield
  */
 public class ReplaceURLs
 {
@@ -47,7 +46,7 @@ public class ReplaceURLs
 
     /**
      * This will read in a document and replace all of the urls with
-     * http://www.pdfbox.org.
+     * http://pdfbox.apache.org.
      * <br />
      * see usage() for commandline
      *
@@ -66,16 +65,16 @@ public class ReplaceURLs
             }
             else
             {
-                doc = PDDocument.load( args[0] );
+                doc = PDDocument.load( new File(args[0]) );
                 int pageNum = 0;
                 for( PDPage page : doc.getPages() )
                 {
                     pageNum++;
-                    List annotations = page.getAnnotations();
+                    List<PDAnnotation> annotations = page.getAnnotations();
 
-                    for( int j=0; j<annotations.size(); j++ )
+                    for (PDAnnotation annotation : annotations)
                     {
-                        PDAnnotation annot = (PDAnnotation)annotations.get( j );
+                        PDAnnotation annot = annotation;
                         if( annot instanceof PDAnnotationLink )
                         {
                             PDAnnotationLink link = (PDAnnotationLink)annot;
@@ -84,7 +83,7 @@ public class ReplaceURLs
                             {
                                 PDActionURI uri = (PDActionURI)action;
                                 String oldURI = uri.getURI();
-                                String newURI = "http://www.pdfbox.org";
+                                String newURI = "http://pdfbox.apache.org";
                                 System.out.println( "Page " + pageNum +": Replacing " + oldURI + " with " + newURI );
                                 uri.setURI( newURI );
                             }

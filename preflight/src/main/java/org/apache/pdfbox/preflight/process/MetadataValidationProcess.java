@@ -21,20 +21,21 @@
 
 package org.apache.pdfbox.preflight.process;
 
-import java.io.ByteArrayOutputStream;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
-
+import javax.imageio.ImageIO;
+import javax.xml.bind.DatatypeConverter;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSDocument;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSObject;
-import org.apache.pdfbox.io.IOUtils;
+import org.apache.pdfbox.cos.COSStream;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.common.PDStream;
 import org.apache.pdfbox.preflight.PreflightConstants;
 import org.apache.pdfbox.preflight.PreflightContext;
 import org.apache.pdfbox.preflight.ValidationResult.ValidationError;
@@ -46,6 +47,9 @@ import org.apache.pdfbox.preflight.metadata.SynchronizedMetaDataValidation;
 import org.apache.pdfbox.preflight.metadata.XpacketParsingException;
 import org.apache.pdfbox.preflight.utils.COSUtils;
 import org.apache.xmpbox.XMPMetadata;
+import org.apache.xmpbox.schema.XMPBasicSchema;
+import org.apache.xmpbox.type.BadFieldValueException;
+import org.apache.xmpbox.type.ThumbnailType;
 import org.apache.xmpbox.xml.DomXmpParser;
 import org.apache.xmpbox.xml.XmpParsingException;
 import org.apache.xmpbox.xml.XmpParsingException.ErrorType;
@@ -60,11 +64,10 @@ public class MetadataValidationProcess extends AbstractProcess
         {
             PDDocument document = ctx.getDocument();
 
-            byte[] tmp = getXpacket(document.getDocument());
-            DomXmpParser builder;
-            builder = new DomXmpParser();
-            XMPMetadata metadata;
-            metadata = builder.parse(tmp);
+            InputStream is = getXpacket(document.getDocument());
+            DomXmpParser builder = new DomXmpParser();
+            XMPMetadata metadata = builder.parse(is);
+            is.close();
             ctx.setMetadata(metadata);
 
             // 6.7.5 no deprecated attribute in xpacket processing instruction
@@ -78,6 +81,8 @@ public class MetadataValidationProcess extends AbstractProcess
                 addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_METADATA_XPACKET_DEPRECATED,
                         "encoding attribute is forbidden"));
             }
+            
+            checkThumbnails(ctx, metadata);
 
             // Call metadata synchronization checking
             addValidationErrors(ctx,
@@ -156,10 +161,97 @@ public class MetadataValidationProcess extends AbstractProcess
         }
     }
 
+    // check thumbnails. See Bavaria Testsuite file PDFA_Conference_2009_nc.pdf for an example.
+    private void checkThumbnails(PreflightContext ctx, XMPMetadata metadata)
+    {
+        XMPBasicSchema xmp = metadata.getXMPBasicSchema();
+        if (xmp == null)
+        {
+            return;
+        }
+        List<ThumbnailType> tbProp;
+        try
+        {
+            tbProp = xmp.getThumbnailsProperty();
+        }
+        catch (BadFieldValueException e)
+        {
+            // should not happen here because it would have happened in XmpParser already
+            addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_METADATA_FORMAT, e.getMessage(), e));
+            return;
+        }
+        if (tbProp == null)
+        {
+            return;
+        }
+        for (ThumbnailType tb : tbProp)
+        {
+            checkThumbnail(tb, ctx);
+        }
+    }
+
+    private void checkThumbnail(ThumbnailType tb, PreflightContext ctx)
+    {
+        byte[] binImage;
+        try
+        {
+            binImage = DatatypeConverter.parseBase64Binary(tb.getImage());
+        }
+        catch (IllegalArgumentException e)
+        {
+            addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_METADATA_FORMAT,
+                    "xapGImg:image is not correct base64 encoding"));
+            return;
+        }
+        if (!hasJpegMagicNumber(binImage))
+        {
+            addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_METADATA_FORMAT,
+                    "xapGImg:image decoded base64 content is not in JPEG format"));
+            return;
+        }
+        BufferedImage bim;
+        try
+        {
+            bim = ImageIO.read(new ByteArrayInputStream(binImage));
+        }
+        catch (IOException e)
+        {
+            addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_METADATA_FORMAT, e.getMessage(), e));
+            return;
+        }
+        if (!"JPEG".equals(tb.getFormat()))
+        {
+            addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_METADATA_FORMAT,
+                    "xapGImg:format must be 'JPEG'"));
+        }
+        if (bim.getHeight() != tb.getHeight())
+        {
+            addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_METADATA_FORMAT,
+                    "xapGImg:height does not match the actual base64-encoded thumbnail image data"));
+        }
+        if (bim.getWidth() != tb.getWidth())
+        {
+            addValidationError(ctx, new ValidationError(PreflightConstants.ERROR_METADATA_FORMAT,
+                    "xapGImg:witdh does not match the actual base64-encoded thumbnail image data"));
+        }
+    }
+    
+    private boolean hasJpegMagicNumber(byte[] binImage)
+    {
+        if (binImage.length < 4)
+        {
+            return false;
+        }
+        return (binImage[0] == (byte) 0xFF
+                && binImage[1] == (byte) 0xD8
+                && binImage[binImage.length - 2] == (byte) 0xFF
+                && binImage[binImage.length - 1] == (byte) 0xD9);
+    }
+
     /**
      * Return the xpacket from the dictionary's stream
      */
-    public static byte[] getXpacket(COSDocument cdocument) throws IOException, XpacketParsingException
+    private static InputStream getXpacket(COSDocument cdocument) throws IOException, XpacketParsingException
     {
         COSObject catalog = cdocument.getCatalog();
         COSBase cb = catalog.getDictionaryObject(COSName.METADATA);
@@ -179,14 +271,17 @@ public class MetadataValidationProcess extends AbstractProcess
                     "Filter specified in metadata dictionnary");
             throw new XpacketParsingException("Failed while retrieving xpacket", error);
         }
+        
+        if (!(metadataDictionnary instanceof COSStream))
+        {
+            // missing Metadata Key in catalog
+            ValidationError error = new ValidationError(PreflightConstants.ERROR_METADATA_FORMAT,
+                    "Metadata is not a stream");
+            throw new XpacketParsingException("Failed while retrieving xpacket", error);
+        }
 
-        PDStream stream = PDStream.createFromCOS(metadataDictionnary);
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        InputStream is = stream.createInputStream();
-        IOUtils.copy(is, bos);
-        is.close();
-        bos.close();
-        return bos.toByteArray();
+        COSStream stream = (COSStream) metadataDictionnary;
+        return stream.getUnfilteredStream();
     }
 
     /**

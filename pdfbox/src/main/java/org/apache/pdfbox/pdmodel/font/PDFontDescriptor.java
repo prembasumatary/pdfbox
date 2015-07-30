@@ -17,6 +17,7 @@
 package org.apache.pdfbox.pdmodel.font;
 
 import org.apache.pdfbox.cos.COSArray;
+import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSStream;
@@ -271,6 +272,7 @@ public final class PDFontDescriptor implements COSObjectable
      *
      * @return The cos object that matches this Java object.
      */
+    @Override
     public COSDictionary getCOSObject()
     {
         return dic;
@@ -737,10 +739,10 @@ public final class PDFontDescriptor implements COSObjectable
     public PDStream getFontFile()
     {
         PDStream retval = null;
-        COSStream stream = (COSStream)dic.getDictionaryObject( COSName.FONT_FILE );
-        if( stream != null )
+        COSBase obj = dic.getDictionaryObject(COSName.FONT_FILE);
+        if (obj instanceof COSStream)
         {
-            retval = new PDStream( stream );
+            retval = new PDStream((COSStream) obj);
         }
         return retval;
     }
@@ -763,10 +765,10 @@ public final class PDFontDescriptor implements COSObjectable
     public PDStream getFontFile2()
     {
         PDStream retval = null;
-        COSStream stream = (COSStream)dic.getDictionaryObject( COSName.FONT_FILE2 );
-        if( stream != null )
+        COSBase obj = dic.getDictionaryObject(COSName.FONT_FILE2);
+        if (obj instanceof COSStream)
         {
-            retval = new PDStream( stream );
+            retval = new PDStream((COSStream) obj);
         }
         return retval;
     }
@@ -789,10 +791,10 @@ public final class PDFontDescriptor implements COSObjectable
     public PDStream getFontFile3()
     {
         PDStream retval = null;
-        COSStream stream = (COSStream)dic.getDictionaryObject( COSName.FONT_FILE3 );
-        if( stream != null )
+        COSBase obj = dic.getDictionaryObject(COSName.FONT_FILE3);
+        if (obj instanceof COSStream)
         {
-            retval = new PDStream( stream );
+            retval = new PDStream((COSStream) obj);
         }
         return retval;
     }
@@ -805,5 +807,32 @@ public final class PDFontDescriptor implements COSObjectable
     public void setFontFile3( PDStream stream )
     {
         dic.setItem( COSName.FONT_FILE3, stream );
+    }
+
+    /**
+     * Set a stream containing a CIDSet.
+     *
+     * @param stream The font program stream.
+     */
+    public void setCIDSet( PDStream stream )
+    {
+        dic.setItem( COSName.CID_SET, stream );
+    }
+
+    /**
+     * Returns the Panose entry of the Style dictionary, if any.
+     *
+     * @return A Panose wrapper object.
+     */
+    public PDPanose getPanose()
+    {
+        COSDictionary style = (COSDictionary)dic.getDictionaryObject(COSName.STYLE);
+        if (style != null)
+        {
+            COSString panose = (COSString)style.getDictionaryObject(COSName.PANOSE);
+            byte[] bytes = panose.getBytes();
+            return new PDPanose(bytes);
+        }
+        return null;
     }
 }

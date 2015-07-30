@@ -16,25 +16,21 @@
  */
 package org.apache.pdfbox.examples.pdmodel;
 
-import org.apache.pdfbox.pdfparser.PDFParser;
-
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.pdmodel.encryption.InvalidPasswordException;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDDocumentOutline;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineItem;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlineNode;
 
-import java.io.FileInputStream;
+import java.io.File;
 import java.io.IOException;
-import org.apache.pdfbox.pdmodel.encryption.StandardDecryptionMaterial;
 
 /**
  * This is an example on how to access the bookmarks that are part of a pdf document.
  *
  * Usage: java org.apache.pdfbox.examples.pdmodel.PrintBookmarks &lt;input-pdf&gt;
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.2 $
+ * @author Ben Litchfield
+ * 
  */
 public class PrintBookmarks
 {
@@ -54,26 +50,9 @@ public class PrintBookmarks
         else
         {
             PDDocument document = null;
-            FileInputStream file = null;
             try
             {
-                file = new FileInputStream( args[0] );
-                PDFParser parser = new PDFParser( file );
-                parser.parse();
-                document = parser.getPDDocument();
-                if( document.isEncrypted() )
-                {
-                    try
-                    {
-                        StandardDecryptionMaterial sdm = new StandardDecryptionMaterial("");
-                        document.openProtection(sdm);
-                    }
-                    catch( InvalidPasswordException e )
-                    {
-                        System.err.println( "Error: Document is encrypted with a password." );
-                        System.exit( 1 );
-                    }
-                }
+                document = PDDocument.load( new File(args[0]) );
                 PrintBookmarks meta = new PrintBookmarks();
                 PDDocumentOutline outline =  document.getDocumentCatalog().getDocumentOutline();
                 if( outline != null )
@@ -87,10 +66,6 @@ public class PrintBookmarks
             }
             finally
             {
-                if( file != null )
-                {
-                    file.close();
-                }
                 if( document != null )
                 {
                     document.close();

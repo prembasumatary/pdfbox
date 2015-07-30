@@ -16,6 +16,8 @@
  */
 package org.apache.pdfbox.examples.pdmodel;
 
+import java.io.File;
+
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.interactive.documentnavigation.destination.PDPageFitWidthDestination;
@@ -28,8 +30,7 @@ import org.apache.pdfbox.pdmodel.interactive.documentnavigation.outline.PDOutlin
  *
  * Usage: java org.apache.pdfbox.examples.pdmodel.CreateBookmarks &lt;input-pdf&gt; &lt;output-pdf&gt;
  *
- * @author <a href="mailto:ben@benlitchfield.com">Ben Litchfield</a>
- * @version $Revision: 1.2 $
+ * @author Ben Litchfield
  */
 public class CreateBookmarks
 {
@@ -56,7 +57,7 @@ public class CreateBookmarks
             PDDocument document = null;
             try
             {
-                document = PDDocument.load( args[0] );
+                document = PDDocument.load( new File(args[0]) );
                 if( document.isEncrypted() )
                 {
                     System.err.println( "Error: Cannot add bookmarks to encrypted document." );
@@ -66,7 +67,7 @@ public class CreateBookmarks
                 document.getDocumentCatalog().setDocumentOutline( outline );
                 PDOutlineItem pagesOutline = new PDOutlineItem();
                 pagesOutline.setTitle( "All Pages" );
-                outline.appendChild( pagesOutline );
+                outline.addLast( pagesOutline );
                 int pageNum = 0;
                 for( PDPage page : document.getPages() )
                 {
@@ -76,7 +77,7 @@ public class CreateBookmarks
                     PDOutlineItem bookmark = new PDOutlineItem();
                     bookmark.setDestination( dest );
                     bookmark.setTitle( "Page " + pageNum );
-                    pagesOutline.appendChild( bookmark );
+                    pagesOutline.addLast( bookmark );
                 }
                 pagesOutline.openNode();
                 outline.openNode();
